@@ -311,7 +311,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             is_malefic_debtor = True
             
         if is_malefic_debtor and bad_val > 0:
-            debt_str = f"Bad {planet_cap}[{bad_val:.2f}]"
+            debt_str = f"-{bad_val:.2f}"
 
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
