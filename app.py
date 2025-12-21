@@ -320,9 +320,16 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 if planet_cap == 'Moon': key = "Bad Moon"
                 planet_data[planet_cap]['final_inventory'][key] = bad_val
 
-    # --- PHASE 1 LOGIC ---
-    
-    # 1. DEBTOR RANK
+    # --- RESTORE PLANET ROWS POPULATION ---
+    for p_name in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        d_item = planet_data[p_name]
+        rows.append([
+            p_name, f"{d_item['L']:.2f}", d_item['sign'], d_item['nak'], d_item['pada'], d_item['ld_sl'], 
+            f"{d_item['dig_bala']}%" if d_item['dig_bala'] is not None else '', f"{d_item['sthana']}%", 
+            d_item['status'], f"{d_item['volume']:.2f}", d_item['default_currency'], d_item['debt_str']
+        ])
+
+    # --- PHASE 1 LOGIC (KEEP UNTOUCHED) ---
     debtor_rank = []
     debtor_rank.append('Rahu')
     debtor_rank.append('Sun')
@@ -348,18 +355,12 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             
     debtor_rank.append('Ketu') # Rank 8
 
-    # 2. CURRENCY RANK (The Menu)
     def get_currency_rank_score(p_name, c_key):
-        # Priority: Category A (Good) Score > 500, Category B (Bad) Score < 500
-        
-        # --- CATEGORY A (GOOD) --- 
         if p_name == 'Moon':
             phase = planet_data['Moon']['moon_phase']
             is_shukla = (paksha == 'Shukla')
             idx = tithi_idx
             if phase == 'Purnima': return 1000
-            
-            # Check if this key corresponds to the Good part
             if 'Good' in c_key or 'Moon' == c_key: 
                 if is_shukla:
                     pct = shukla_good[idx]
@@ -371,24 +372,18 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if c_key == 'Jupiter': return 990
         if c_key == 'Venus': return 980
         if c_key == 'Mercury': return 970
-        
         if c_key == 'Good Mars': return 800 
         if c_key == 'Good Sun': return 700 
         if c_key == 'Good Ketu': return 700
-        
-        # --- CATEGORY B (BAD) ---
         if p_name == 'Moon' and 'Bad' in c_key:
             pct = planet_data['Moon']['moon_bad_pct']
             return 400 - (pct * 3)
-            
         if c_key == 'Bad Mars': return 325 
         if c_key == 'Bad Sun': return 250 
         if c_key == 'Bad Saturn': return 100 
         if c_key == 'Bad Rahu': return 100
-        
         return 0
 
-    # 3. CYCLE LOGIC
     loop_active = True
     cycle_limit = 200
     cycles = 0
@@ -404,7 +399,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             for t_name in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
                 if t_name == debtor: continue
                 
-                # Hierarchy Check
                 d_idx = debtor_rank.index(debtor) if debtor in debtor_rank else 99
                 t_idx = debtor_rank.index(t_name) if t_name in debtor_rank else 99
                 if d_idx > t_idx: continue 
@@ -414,12 +408,11 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 inv = planet_data[t_name]['final_inventory']
                 for key, val in inv.items():
                     if val > 0.001:
-                        # Degree Cap Check
                         L1 = planet_data[debtor]['L']
                         L2 = planet_data[t_name]['L']
-                        diff = abs(L1 - L2)
-                        if diff > 180: diff = 360 - diff
-                        gap = int(diff)
+                        diff_deg = abs(L1 - L2)
+                        if diff_deg > 180: diff_deg = 360 - diff_deg
+                        gap = int(diff_deg)
                         if gap > 22: continue
                         
                         cap_pct = mix_dict.get(gap, 0)
@@ -451,16 +444,13 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 cap_space = tgt['max_pull'] - pulled
                 if cap_space <= 0: continue
                 
-                needed = abs(planet_data[debtor]['current_debt'])
                 take = min(1.0, avail, cap_space)
                 
                 if take > 0:
                     planet_data[tgt['planet']]['final_inventory'][tgt['key']] -= take
                     planet_data[tgt['planet']]['current_debt'] -= take
-                    
                     planet_data[debtor]['final_inventory'][tgt['key']] += take
                     
-                    # Debt Update Rule
                     is_bad_currency = 'Bad' in tgt['key'] or tgt['key'] in ['Amavasya', 'Bad Saturn', 'Bad Rahu']
                     if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency = True
                     if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency = True
@@ -475,21 +465,17 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
 
         if not something_happened: loop_active = False
 
-    # --- FORMAT OUTPUT ---
+    # --- FORMAT PHASE 1 OUTPUT ---
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         inv = planet_data[p]['final_inventory']
         parts = []
-        
         own_keys = [p, f"Good {p}", f"Bad {p}"]
         if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
-        
         for k in own_keys:
             if k in inv and inv[k] > 0.001: parts.append(f"{k}[{inv[k]:.2f}]")
         for k, v in inv.items():
             if k not in own_keys and v > 0.001: parts.append(f"{k}[{v:.2f}]")
-                
         planet_data[p]['currency_p1'] = ", ".join(parts)
-        
         d_val = planet_data[p]['current_debt']
         if abs(d_val) < 0.01: planet_data[p]['debt_p1'] = "0.00"
         else: planet_data[p]['debt_p1'] = f"{d_val:.2f}"
@@ -497,9 +483,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     phase1_rows = []
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         d = planet_data[p]
-        phase1_rows.append([
-            p, d['currency_p1'], d['debt_p1']
-        ])
+        phase1_rows.append([p, d['currency_p1'], d['debt_p1']])
         
     df_phase1 = pd.DataFrame(phase1_rows, columns=['Planet', 'Currency [Phase 1]', 'Debt [Phase 1]'])
     df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Debt'])
@@ -540,7 +524,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                              ', '.join(asp) if asp else 'None', lord, f"House {lord_house}"])
     df_house_status = pd.DataFrame(house_status, columns=['House','Planets','Aspects from','Lord','Lord in'])
 
-    # dasa tree
     moon_lon = lon_sid['moon']
     idx, bal = generate_vimshottari_dasa(moon_lon)
     full_first = years[idx]; passed = full_first - bal
