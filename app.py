@@ -24,6 +24,7 @@ cities_fallback = {
     'Kolkata': {'lat': 22.57, 'lon': 88.36}, 'Hyderabad': {'lat': 17.39, 'lon': 78.49},
 }
 sign_names = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces']
+
 # Mapping for Tamil sign names used in status calculation
 tamil_to_english = {
     'Mesham': 'Aries', 'Rishabam': 'Taurus', 'Mithunam': 'Gemini', 'Kadagam': 'Cancer',
@@ -52,7 +53,7 @@ sthana_bala_dict = {
     'Ketu': [100]*12
 }
 
-# Status Mapping based on User Image
+# Status Mapping
 status_data = {
     'Sun': {'Uchcham': 'Aries', 'Moolathirigonam': None, 'Aatchi': 'Leo', 'Neecham': 'Libra'},
     'Moon': {'Uchcham': 'Taurus', 'Moolathirigonam': None, 'Aatchi': 'Cancer', 'Neecham': 'Scorpio'},
@@ -63,17 +64,26 @@ status_data = {
     'Saturn': {'Uchcham': 'Libra', 'Moolathirigonam': 'Aquarius', 'Aatchi': 'Capricorn', 'Neecham': 'Aries'}
 }
 
+# Capacity percentages based on "Astrology Score - Planet Score.csv"
 capacity_dict = {
-    'Saturn': 100,
-    'Mars': 50,
-    'Sun': 100,
-    'Jupiter': 100,
-    'Venus': 50,
-    'Mercury': 30,
-    'Moon': 100,
-    'Rahu': 100,
-    'Ketu': 50
+    'Saturn': 100, 'Mars': 50, 'Sun': 100, 'Jupiter': 100, 
+    'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
+# Good/Bad percentages based on the sheet
+good_capacity_dict = {
+    'Saturn': 0, 'Mars': 75, 'Sun': 50, 'Jupiter': 100, 
+    'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 100
+}
+bad_capacity_dict = {
+    'Saturn': 100, 'Mars': 25, 'Sun': 50, 'Jupiter': 0, 
+    'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 0
+}
+
+# Moon Tithi Capacities (Matches sheet rows 6-35)
+shukla_good = [100, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
+shukla_bad = [0] * 15
+krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
+krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
 # ---- Astro helpers ----
 def get_lahiri_ayanamsa(year):
@@ -192,6 +202,18 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     lon_sid = {p: get_sidereal_lon(lon_trop[p], ayan) for p in lon_trop}
     lagna_sid = get_sidereal_lon(get_ascendant(jd, lat, lon), ayan)
     
+    # Calculate Tithi (for Moon percentages)
+    sun_lon = lon_sid['sun']
+    moon_lon = lon_sid['moon']
+    diff = (moon_lon - sun_lon) % 360
+    tithi_fraction = diff / 12
+    tithi = int(tithi_fraction) + 1
+    if tithi > 30: tithi = 30
+    if diff < 180: paksha = 'Krishna'
+    else: paksha = 'Shukla'
+    if paksha == 'Shukla': tithi_idx = tithi - 1 if tithi <=15 else tithi -16
+    else: tithi_idx = tithi -1 if tithi <=15 else tithi -16
+
     # rasi houses
     house_planets_rasi = defaultdict(list)
     positions = {**lon_sid, 'asc': lagna_sid}
@@ -205,7 +227,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
     dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
     
-    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', ''])
+    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', ''])
     
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
@@ -213,7 +235,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         planet_cap = p.capitalize()
         sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
         
-        # Calculate Status based on uploaded image data
+        # Calculate Status
         status = '-'
         if planet_cap in status_data:
             mapping = status_data[planet_cap]
@@ -223,23 +245,44 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             elif sign == mapping['Aatchi']: status = 'Aatchi'
             
         capacity = capacity_dict.get(planet_cap, None)
-        volume = (capacity * sthana / 100.0) if capacity is not None else ''
+        volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
+        
+        # Determine Good/Bad Percentages for calculation
+        if planet_cap == 'Moon':
+            if paksha == 'Shukla':
+                good_pct = shukla_good[tithi_idx]
+                bad_pct = shukla_bad[tithi_idx]
+            else:
+                good_pct = krishna_good[tithi_idx]
+                bad_pct = krishna_bad[tithi_idx]
+        else:
+            good_pct = good_capacity_dict.get(planet_cap, 0)
+            bad_pct = bad_capacity_dict.get(planet_cap, 0)
+
+        # Calculate Default Currencies (Value * Percentage)
+        good_val = volume * (good_pct / 100.0)
+        bad_val = volume * (bad_pct / 100.0)
+        
+        # Create the currency string
+        # Example format: Good Mars[37.50], Bad Mars[12.50]
+        default_currency_str = f"Good {planet_cap}[{good_val:.2f}], Bad {planet_cap}[{bad_val:.2f}]"
         
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
-            'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 'status': status
+            'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
+            'status': status, 'default_currency': default_currency_str
         }
 
-    # Build rows with new Status column
+    # Build rows with Default Currencies column
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         data = planet_data[p]
         rows.append([
             p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], 
             f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", 
-            data['status'], f"{data['volume']:.2f}" if isinstance(data['volume'], float) else ''
+            data['status'], f"{data['volume']:.2f}", data['default_currency']
         ])
     
-    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume'])
+    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies'])
 
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
