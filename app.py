@@ -90,6 +90,10 @@ krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 # Single currency planets
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
 
+# Malefics that create Debt (Saturn, Mars, Sun, Rahu)
+# Moon is handled conditionally
+base_malefics = ['Saturn', 'Mars', 'Sun', 'Rahu']
+
 # ---- Astro helpers ----
 def get_lahiri_ayanamsa(year):
     base = 23.853; rate = 50.2388/3600.0
@@ -212,27 +216,24 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     moon_lon = lon_sid['moon']
     diff = (moon_lon - sun_lon) % 360
     
-    # FIX: Moon moving 0->180 is Waxing (Shukla/Towards Full Moon)
-    # Moon moving 180->360 is Waning (Krishna/Post Full Moon)
+    # Waxing (Shukla): 0 -> 180 (Towards Full Moon)
+    # Waning (Krishna): 180 -> 360 (Towards New Moon)
     if diff < 180:
-        paksha = 'Shukla' # Towards Full Moon
+        paksha = 'Shukla'
     else:
-        paksha = 'Krishna' # Post Full Moon
+        paksha = 'Krishna'
 
     # Calculate Tithi (1-30)
     tithi_fraction = diff / 12
     tithi = int(tithi_fraction) + 1
     if tithi > 30: tithi = 30
     
-    # Calculate Index for Arrays (0-14)
-    # Shukla: Tithi 1-15 -> idx 0-14
-    # Krishna: Tithi 16-30 -> idx 0-14
     if paksha == 'Shukla':
         tithi_idx = tithi - 1
-        if tithi_idx > 14: tithi_idx = 14 # Safety cap
+        if tithi_idx > 14: tithi_idx = 14
     else:
         tithi_idx = tithi - 16
-        if tithi_idx < 0: tithi_idx = 0 # Safety cap
+        if tithi_idx < 0: tithi_idx = 0
         if tithi_idx > 14: tithi_idx = 14
 
     # rasi houses
@@ -248,7 +249,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
     dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
     
-    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', ''])
+    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', ''])
     
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
@@ -271,11 +272,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         # --- Step 2: Assign Good/Bad Percentages based on Phase ---
         if planet_cap == 'Moon':
             if paksha == 'Shukla':
-                # Towards Full Moon: Bad score is strictly 0
                 good_pct = shukla_good[tithi_idx]
-                bad_pct = shukla_bad[tithi_idx] # This is 0
+                bad_pct = shukla_bad[tithi_idx] # 0
             else:
-                # Post Full Moon: Bad score exists
                 good_pct = krishna_good[tithi_idx]
                 bad_pct = krishna_bad[tithi_idx]
         else:
@@ -288,28 +287,37 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         
         # --- Format Currency String ---
         currency_parts = []
-        
         if planet_cap in single_currency_planets:
             total_val = good_val + bad_val
             if total_val > 0:
                 currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
         else:
-            # Good component
             if good_val > 0:
                 currency_parts.append(f"Good {planet_cap}[{good_val:.2f}]")
-            
-            # Bad component
-            # If Towards Full Moon (Shukla), bad_pct is 0, so bad_val is 0. 
-            # This check ensures it's skipped as requested.
             if bad_val > 0:
                 currency_parts.append(f"Bad {planet_cap}[{bad_val:.2f}]")
 
         default_currency_str = ", ".join(currency_parts)
         
+        # --- Calculate Debt ---
+        # Malefics: Saturn, Mars, Sun, Rahu
+        # Moon only if Krishna Paksha (Waning / Towards New Moon)
+        debt_str = '-'
+        is_malefic_debtor = False
+        
+        if planet_cap in base_malefics:
+            is_malefic_debtor = True
+        elif planet_cap == 'Moon' and paksha == 'Krishna':
+            is_malefic_debtor = True
+            
+        if is_malefic_debtor and bad_val > 0:
+            debt_str = f"Bad {planet_cap}[{bad_val:.2f}]"
+
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
             'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
-            'status': status, 'default_currency': default_currency_str
+            'status': status, 'default_currency': default_currency_str,
+            'debt': debt_str
         }
 
     # Build rows with Default Currencies column
@@ -318,10 +326,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         rows.append([
             p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], 
             f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", 
-            data['status'], f"{data['volume']:.2f}", data['default_currency']
+            data['status'], f"{data['volume']:.2f}", data['default_currency'], data['debt']
         ])
     
-    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies'])
+    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Debt'])
 
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
