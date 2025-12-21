@@ -62,11 +62,11 @@ capacity_dict = {
 }
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 75, 'Sun': 50, 'Jupiter': 100, 
-    'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 0  # Updated to 0 for Ketu
+    'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 0 
 }
 bad_capacity_dict = {
     'Saturn': 100, 'Mars': 25, 'Sun': 50, 'Jupiter': 0, 
-    'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 100 # Updated to 100 for Ketu
+    'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 100 
 }
 
 shukla_good = [7, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
@@ -329,9 +329,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             d_item['status'], f"{d_item['volume']:.2f}", d_item['default_currency'], d_item['debt_str']
         ])
 
-    # --- PHASE 1 LOGIC (KEEP UNTOUCHED) ---
+    # --- PHASE 1 LOGIC ---
     debtor_rank = []
     debtor_rank.append('Rahu')
+    debtor_rank.append('Ketu') # Elevated to Rank 2
     debtor_rank.append('Sun')
     debtor_rank.append('Saturn')
     
@@ -353,7 +354,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         else:
             debtor_rank.append('Moon') # Rank 7 (Light)
             
-    debtor_rank.append('Ketu') # Rank 8
+    # Ketu removed from end because it is now Rank 2
 
     def get_currency_rank_score(p_name, c_key):
         if p_name == 'Moon':
@@ -392,7 +393,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         cycles += 1
         something_happened = False
         
+        transaction_occurred = False # To enforce one transaction per cycle
+        
         for debtor in debtor_rank:
+            if transaction_occurred: break
             if planet_data[debtor]['current_debt'] >= -0.001: continue
             
             potential_targets = []
@@ -444,6 +448,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 cap_space = tgt['max_pull'] - pulled
                 if cap_space <= 0: continue
                 
+                # Take one unit from one planet per cycle
                 take = min(1.0, avail, cap_space)
                 
                 if take > 0:
@@ -462,6 +467,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                     
                     planet_data[debtor][tracker_key] = pulled + take
                     something_happened = True
+                    transaction_occurred = True
+                    break # Break target loop to restart cycle
 
         if not something_happened: loop_active = False
 
