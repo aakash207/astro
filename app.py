@@ -64,12 +64,12 @@ status_data = {
     'Saturn': {'Uchcham': 'Libra', 'Moolathirigonam': 'Aquarius', 'Aatchi': 'Capricorn', 'Neecham': 'Aries'}
 }
 
-# Capacity percentages based on "Astrology Score - Planet Score.csv"
+# Capacity percentages
 capacity_dict = {
     'Saturn': 100, 'Mars': 50, 'Sun': 100, 'Jupiter': 100, 
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
-# Good/Bad percentages based on the sheet
+# Good/Bad percentages
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 75, 'Sun': 50, 'Jupiter': 100, 
     'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 100
@@ -79,13 +79,15 @@ bad_capacity_dict = {
     'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 0
 }
 
-# Moon Tithi Capacities (Matches sheet rows 6-35)
+# Moon Tithi Capacities
+# Shukla (Waxing/Towards Full Moon): Bad capacity is strictly 0
 shukla_good = [100, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
 shukla_bad = [0] * 15
+# Krishna (Waning/After Full Moon): Bad capacity increases
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
-# List of planets that only show Name[Value] without Good/Bad prefix
+# Single currency planets
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
 
 # ---- Astro helpers ----
@@ -205,17 +207,33 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     lon_sid = {p: get_sidereal_lon(lon_trop[p], ayan) for p in lon_trop}
     lagna_sid = get_sidereal_lon(get_ascendant(jd, lat, lon), ayan)
     
-    # Calculate Tithi (for Moon percentages)
+    # --- Step 1: Identify Moon Phase (Paksha) ---
     sun_lon = lon_sid['sun']
     moon_lon = lon_sid['moon']
     diff = (moon_lon - sun_lon) % 360
+    
+    # FIX: Moon moving 0->180 is Waxing (Shukla/Towards Full Moon)
+    # Moon moving 180->360 is Waning (Krishna/Post Full Moon)
+    if diff < 180:
+        paksha = 'Shukla' # Towards Full Moon
+    else:
+        paksha = 'Krishna' # Post Full Moon
+
+    # Calculate Tithi (1-30)
     tithi_fraction = diff / 12
     tithi = int(tithi_fraction) + 1
     if tithi > 30: tithi = 30
-    if diff < 180: paksha = 'Krishna'
-    else: paksha = 'Shukla'
-    if paksha == 'Shukla': tithi_idx = tithi - 1 if tithi <=15 else tithi -16
-    else: tithi_idx = tithi -1 if tithi <=15 else tithi -16
+    
+    # Calculate Index for Arrays (0-14)
+    # Shukla: Tithi 1-15 -> idx 0-14
+    # Krishna: Tithi 16-30 -> idx 0-14
+    if paksha == 'Shukla':
+        tithi_idx = tithi - 1
+        if tithi_idx > 14: tithi_idx = 14 # Safety cap
+    else:
+        tithi_idx = tithi - 16
+        if tithi_idx < 0: tithi_idx = 0 # Safety cap
+        if tithi_idx > 14: tithi_idx = 14
 
     # rasi houses
     house_planets_rasi = defaultdict(list)
@@ -250,12 +268,14 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         capacity = capacity_dict.get(planet_cap, None)
         volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
         
-        # Determine Good/Bad Percentages for calculation
+        # --- Step 2: Assign Good/Bad Percentages based on Phase ---
         if planet_cap == 'Moon':
             if paksha == 'Shukla':
+                # Towards Full Moon: Bad score is strictly 0
                 good_pct = shukla_good[tithi_idx]
-                bad_pct = shukla_bad[tithi_idx]
+                bad_pct = shukla_bad[tithi_idx] # This is 0
             else:
+                # Post Full Moon: Bad score exists
                 good_pct = krishna_good[tithi_idx]
                 bad_pct = krishna_bad[tithi_idx]
         else:
@@ -269,23 +289,18 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         # --- Format Currency String ---
         currency_parts = []
         
-        # 1. Single Currency Planets (Venus, Jupiter, Mercury, Rahu, Ketu, Saturn)
         if planet_cap in single_currency_planets:
-            # Sum logic ensures we pick up whichever side has the 100% (or the non-zero value)
             total_val = good_val + bad_val
             if total_val > 0:
                 currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
-        
-        # 2. Dual/Mixed Currency Planets (Sun, Mars) + Moon
         else:
             # Good component
             if good_val > 0:
                 currency_parts.append(f"Good {planet_cap}[{good_val:.2f}]")
             
             # Bad component
-            # Logic: If bad score is 0, don't add. 
-            # Moon specific: "If it is towards full moon (Shukla), then no bad currency".
-            # (Note: In Shukla, bad_pct is already 0, so bad_val is 0, so it's handled by bad_val > 0 check)
+            # If Towards Full Moon (Shukla), bad_pct is 0, so bad_val is 0. 
+            # This check ensures it's skipped as requested.
             if bad_val > 0:
                 currency_parts.append(f"Bad {planet_cap}[{bad_val:.2f}]")
 
