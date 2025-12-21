@@ -87,13 +87,11 @@ shukla_bad = [0] * 15
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
-# Mix Dictionary for Degree Gap
-mix_dict = {0:100,1:100,2:100,3:95,4:90,5:85,6:80,7:75,8:70,9:65,10:60,11:55,12:50,13:45,14:40,15:35,16:30,17:25,18:20,19:15,20:10,21:5,22:0}
-
 # Single currency planets
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
 
-# Malefics that create Debt
+# Malefics that create Debt (Saturn, Mars, Sun, Rahu)
+# Moon is handled conditionally
 base_malefics = ['Saturn', 'Mars', 'Sun', 'Rahu']
 
 # ---- Astro helpers ----
@@ -218,11 +216,14 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     moon_lon = lon_sid['moon']
     diff = (moon_lon - sun_lon) % 360
     
+    # Waxing (Shukla): 0 -> 180 (Towards Full Moon)
+    # Waning (Krishna): 180 -> 360 (Towards New Moon)
     if diff < 180:
         paksha = 'Shukla'
     else:
         paksha = 'Krishna'
 
+    # Calculate Tithi (1-30)
     tithi_fraction = diff / 12
     tithi = int(tithi_fraction) + 1
     if tithi > 30: tithi = 30
@@ -241,271 +242,95 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     for p, L in positions.items():
         house_planets_rasi[get_house(L, lagna_sid)].append(p.capitalize() if p != 'asc' else 'Asc')
 
-    # --- Initial Planet Data Calculation ---
+    # planets table
+    rows = []
     planet_data = {}
     asc_deg = lagna_sid % 360; asc_sign = get_sign(asc_deg)
     a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
     dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
     
-    # Pre-calc rows for basic display
-    rows = []
     rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', ''])
     
-    planets_list = ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']
-    
-    for p_name in planets_list:
-        p_key = p_name.lower()
-        L = lon_sid[p_key]
-        sign = get_sign(L)
-        nak, pada, ld, sl = get_nakshatra_details(L)
-        dig_bala = calculate_dig_bala(p_key, L, lagna_sid)
-        sthana = sthana_bala_dict.get(p_name, [0]*12)[sign_names.index(sign)]
+    for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
+        L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
+        dig_bala = calculate_dig_bala(p, L, lagna_sid)
+        planet_cap = p.capitalize()
+        sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
         
+        # Calculate Status
         status = '-'
-        if p_name in status_data:
-            mapping = status_data[p_name]
+        if planet_cap in status_data:
+            mapping = status_data[planet_cap]
             if sign == mapping['Uchcham']: status = 'Uchcham'
             elif sign == mapping['Neecham']: status = 'Neecham'
             elif sign == mapping['Moolathirigonam']: status = 'Moolathirigonam'
             elif sign == mapping['Aatchi']: status = 'Aatchi'
             
-        capacity = capacity_dict.get(p_name, None)
+        capacity = capacity_dict.get(planet_cap, None)
         volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
         
-        if p_name == 'Moon':
+        # --- Step 2: Assign Good/Bad Percentages based on Phase ---
+        if planet_cap == 'Moon':
             if paksha == 'Shukla':
                 good_pct = shukla_good[tithi_idx]
-                bad_pct = shukla_bad[tithi_idx]
+                bad_pct = shukla_bad[tithi_idx] # 0
             else:
                 good_pct = krishna_good[tithi_idx]
                 bad_pct = krishna_bad[tithi_idx]
         else:
-            good_pct = good_capacity_dict.get(p_name, 0)
-            bad_pct = bad_capacity_dict.get(p_name, 0)
+            good_pct = good_capacity_dict.get(planet_cap, 0)
+            bad_pct = bad_capacity_dict.get(planet_cap, 0)
 
+        # Calculate Values
         good_val = volume * (good_pct / 100.0)
         bad_val = volume * (bad_pct / 100.0)
         
-        # Initial Debt Logic
-        initial_debt = 0.0
-        if p_name in base_malefics:
-            initial_debt -= bad_val
-        elif p_name == 'Moon' and paksha == 'Krishna':
-            initial_debt -= bad_val
-            
-        if p_name == 'Ketu':
-            initial_debt = -bad_val - 50.0
-
-        planet_data[p_name] = {
-            'L': L,
-            'sign': sign,
-            'volume': volume,
-            'good_val': good_val,
-            'bad_val': bad_val,
-            'current_debt': initial_debt,
-            'inventory': {}, # Will store 'Source': amount
-            'sthana': sthana,
-            'dig_bala': dig_bala,
-            'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}",
-            'status': status
-        }
-        
-        # Initialize Inventory
-        if good_val > 0:
-            if p_name in single_currency_planets:
-                planet_data[p_name]['inventory'][p_name] = good_val
-            else:
-                planet_data[p_name]['inventory'][f"Good {p_name}"] = good_val
-        if bad_val > 0:
-             if p_name in single_currency_planets:
-                 # Single currency planets only show Name if mixed (but here logic implies they separate only if mixed?)
-                 # The prompt says single currency planets show Name[Val]. 
-                 # Malefics like Saturn have 100% Bad. So it shows Saturn[100].
-                 # If we treat it as inventory, we keep the label consistent.
-                 if p_name in planet_data[p_name]['inventory']:
-                     planet_data[p_name]['inventory'][p_name] += bad_val
-                 else:
-                     planet_data[p_name]['inventory'][p_name] = bad_val
-             else:
-                 planet_data[p_name]['inventory'][f"Bad {p_name}"] = bad_val
-
-    # --- Phase 1 Simulation Logic ---
-    
-    # 1. Define Puller Order (Debtors)
-    puller_order = ['Rahu', 'Sun', 'Saturn', 'Mars', 'Ketu']
-    if paksha == 'Krishna':
-        puller_order.append('Moon')
-
-    # 2. Define Target Priority (Menu)
-    # We construct the menu dynamically based on available planets and their specific currencies
-    def get_currency_rank_score(currency_label, p_name):
-        # Premium Tier (Good)
-        if p_name == 'Moon' and paksha == 'Shukla':
-             if tithi == 15: return 1000 # Pournami
-             # Shukla 14 down to 1
-             return 900 + tithi_idx
-        if p_name in ['Jupiter', 'Venus', 'Mercury'] and "Good" in currency_label or currency_label == p_name: return 1000
-        if "Good" in currency_label:
-            if p_name == 'Mars': return 800
-            if p_name in ['Sun', 'Ketu']: return 700
-        
-        # Fallback Tier (Bad)
-        # Score needs to be lower than any Good. Max Good score ~1000. Min Good ~700/900.
-        # Let's say Good > 500. Bad < 500.
-        # Bad Ordered Least Malefic to Most.
-        # Krishna Pratipada (Bad 7%) is best bad. Krishna Amavasya (Bad 100%) is worst.
-        if p_name == 'Moon' and paksha == 'Krishna':
-            # Tithi 16 (idx 0, 7% bad) -> Score 490
-            # Tithi 30 (idx 14, 100% bad) -> Score 400
-            # So Score = 490 - (tithi_idx * 5) roughly?
-            if tithi == 30: return 100 # Amavasya
-            return 490 - (tithi_idx * 10)
-        
-        if "Bad" in currency_label or (p_name in ['Saturn', 'Rahu'] and currency_label == p_name):
-            if p_name == 'Mars': return 450 # 25% bad
-            if p_name == 'Sun': return 300 # 50% bad
-            if p_name in ['Saturn', 'Rahu']: return 100 # 100% bad
-            
-        return 0 
-
-    # We track "Cap" per pair: cap_tracker[(Debtor, Target)] = amount_pulled
-    cap_tracker = defaultdict(float)
-
-    max_cycles = 500 # Safety break
-    cycle_count = 0
-    
-    while cycle_count < max_cycles:
-        move_made = False
-        
-        for puller_name in puller_order:
-            if planet_data[puller_name]['current_debt'] >= 0:
-                continue # No debt, no eating
-            
-            # Identify Targets
-            # Construct a flat list of available currencies from all planets
-            menu = []
-            for target_name in planets_list:
-                if target_name == puller_name: continue
-                
-                # Special Rule: Ketu only eats Sun and Moon
-                if puller_name == 'Ketu' and target_name not in ['Sun', 'Moon']:
-                    continue
-                
-                # Check Degree Gap Cap
-                diff_deg = int(abs(planet_data[puller_name]['L'] - planet_data[target_name]['L']))
-                if diff_deg > 180: diff_deg = 360 - diff_deg
-                if diff_deg > 22: continue # No connection > 22 deg
-                
-                pct_limit = mix_dict.get(diff_deg, 0)
-                if pct_limit <= 0: continue
-                
-                max_allowable = planet_data[target_name]['volume'] * (pct_limit / 100.0)
-                already_taken = cap_tracker[(puller_name, target_name)]
-                available_capacity = max_allowable - already_taken
-                
-                if available_capacity <= 0.01: continue
-                
-                # Add currencies to menu
-                for curr_label, amount in planet_data[target_name]['inventory'].items():
-                    if amount > 0.01:
-                        score = get_currency_rank_score(curr_label, target_name)
-                        menu.append({
-                            'target': target_name,
-                            'label': curr_label,
-                            'amount': amount,
-                            'score': score,
-                            'avail_cap': available_capacity
-                        })
-            
-            if not menu: continue
-            
-            # Sort Menu: Highest Score first. If Good/Bad exist for same planet, Good score is higher usually.
-            # Secondary sort? No, score handles it.
-            menu.sort(key=lambda x: x['score'], reverse=True)
-            
-            best_choice = menu[0]
-            
-            # Execute Pull (1 Unit)
-            amount_to_pull = 1.0
-            # Constrain by remaining debt (absolute value)
-            needed = abs(planet_data[puller_name]['current_debt'])
-            amount_to_pull = min(amount_to_pull, needed)
-            # Constrain by available in target
-            amount_to_pull = min(amount_to_pull, best_choice['amount'])
-            # Constrain by capacity
-            amount_to_pull = min(amount_to_pull, best_choice['avail_cap'])
-            
-            if amount_to_pull > 0.001:
-                # Transfer
-                t_name = best_choice['target']
-                c_label = best_choice['label']
-                
-                # 1. Target Loses
-                planet_data[t_name]['inventory'][c_label] -= amount_to_pull
-                # Target debt increases (more negative)
-                planet_data[t_name]['current_debt'] -= amount_to_pull
-                
-                # 2. Puller Gains
-                if c_label in planet_data[puller_name]['inventory']:
-                    planet_data[puller_name]['inventory'][c_label] += amount_to_pull
-                else:
-                    planet_data[puller_name]['inventory'][c_label] = amount_to_pull
-                
-                # Puller debt reduces (less negative, whether good or bad taken)
-                planet_data[puller_name]['current_debt'] += amount_to_pull
-                
-                # 3. Track Cap
-                cap_tracker[(puller_name, t_name)] += amount_to_pull
-                
-                move_made = True
-                
-        if not move_made:
-            break
-        cycle_count += 1
-
-    # --- Final Formatting for Display ---
-    for p_name in planets_list:
-        # Currency String
-        inv = planet_data[p_name]['inventory']
-        # Sort inventory for consistent display: Good P -> Bad P -> Others
-        # Helper to sort: Self Good > Self Bad > Others
-        def sort_inv_key(k):
-            if k == p_name or k == f"Good {p_name}": return 0
-            if k == f"Bad {p_name}": return 1
-            return 2
-            
-        inv_items = sorted(inv.items(), key=lambda x: sort_inv_key(x[0]))
-        curr_str_parts = []
-        for label, amt in inv_items:
-            if amt > 0.005:
-                curr_str_parts.append(f"{label}[{amt:.2f}]")
-        
-        default_currency_str = ", ".join(curr_str_parts) if curr_str_parts else "-"
-        
-        # Debt String
-        d = planet_data[p_name]['current_debt']
-        if d < -0.005:
-            debt_str = f"{d:.2f}"
+        # --- Format Currency String ---
+        currency_parts = []
+        if planet_cap in single_currency_planets:
+            total_val = good_val + bad_val
+            if total_val > 0:
+                currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
         else:
-            debt_str = "-"
-            
-        # Get basic data for row reconstruction
-        d_p = planet_data[p_name]
-        
-        # We need to find the matching row in 'rows' or rebuild.
-        # Rebuilding is safer to ensure order.
-        rows.append([
-            p_name, f"{d_p['L']:.2f}", d_p['sign'], d_p['nak'], d_p['pada'], d_p['ld_sl'], 
-            f"{d_p['dig_bala']}%" if d_p['dig_bala'] is not None else '', f"{d_p['sthana']}%", 
-            d_p['status'], f"{d_p['volume']:.2f}", default_currency_str, debt_str
-        ])
+            if good_val > 0:
+                currency_parts.append(f"Good {planet_cap}[{good_val:.2f}]")
+            if bad_val > 0:
+                currency_parts.append(f"Bad {planet_cap}[{bad_val:.2f}]")
 
-    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Currency [Phase 1]', 'Debt [Phase 1]'])
-    # Clean up duplicate rows (Asc was added first, then planets loop added planets)
-    # The loop above added planets to 'rows' list which already had Asc.
+        default_currency_str = ", ".join(currency_parts)
+        
+        # --- Calculate Debt ---
+        # Malefics: Saturn, Mars, Sun, Rahu
+        # Moon only if Krishna Paksha (Waning / Towards New Moon)
+        debt_str = '-'
+        is_malefic_debtor = False
+        
+        if planet_cap in base_malefics:
+            is_malefic_debtor = True
+        elif planet_cap == 'Moon' and paksha == 'Krishna':
+            is_malefic_debtor = True
+            
+        if is_malefic_debtor and bad_val > 0:
+            debt_str = f"-{bad_val:.2f}"
+
+        planet_data[planet_cap] = {
+            'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
+            'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
+            'status': status, 'default_currency': default_currency_str,
+            'debt': debt_str
+        }
+
+    # Build rows with Default Currencies column
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        data = planet_data[p]
+        rows.append([
+            p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], 
+            f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", 
+            data['status'], f"{data['volume']:.2f}", data['default_currency'], data['debt']
+        ])
     
-    # ... (Rest of chart components remain same)
-    
+    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Debt'])
+
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
                              ', '.join(sorted(house_planets_rasi[h])) if house_planets_rasi[h] else 'Empty'] 
