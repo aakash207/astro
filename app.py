@@ -24,7 +24,7 @@ cities_fallback = {
 }
 sign_names = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces']
 
-# Restored Missing Constant
+# Restored Missing Constants
 lords_full = ['Ketu','Venus','Sun','Moon','Mars','Rahu','Jupiter','Saturn','Mercury']
 lords_short = ['Ke','Ve','Su','Mo','Ma','Ra','Ju','Sa','Me']
 
@@ -70,12 +70,10 @@ bad_capacity_dict = {
     'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 50
 }
 
-# Shukla Good Array (Increasing from Low to High)
+# Tithi Capacities
 shukla_good = [7, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
 shukla_bad = [0] * 15
-# Krishna Good Array (Decreasing from High to Low)
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
-# Krishna Bad Array (Increasing)
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
 shukla_tithi_names = ['Shukla Pratipada', 'Shukla Dwitiya', 'Shukla Tritiya', 'Shukla Chaturthi', 'Shukla Panchami', 'Shukla Shashti', 'Shukla Saptami', 'Shukla Ashtami', 'Shukla Navami', 'Shukla Dashami', 'Shukla Ekadashi', 'Shukla Dwadashi', 'Shukla Trayodashi', 'Shukla Chaturdashi', 'Purnima']
@@ -200,11 +198,15 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     lon_sid = {p: get_sidereal_lon(lon_trop[p], ayan) for p in lon_trop}
     lagna_sid = get_sidereal_lon(get_ascendant(jd, lat, lon), ayan)
     
+    # --- Step 1: Identify Moon Phase (Paksha) ---
     sun_lon = lon_sid['sun']
     moon_lon = lon_sid['moon']
     diff = (moon_lon - sun_lon) % 360
-    if diff < 180: paksha = 'Shukla'
-    else: paksha = 'Krishna'
+    
+    if diff < 180:
+        paksha = 'Shukla'
+    else:
+        paksha = 'Krishna'
 
     tithi_fraction = diff / 12
     tithi = int(tithi_fraction) + 1
@@ -306,7 +308,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             'moon_good_pct': moon_good_pct if planet_cap == 'Moon' else 0
         }
         
-        # Initialize Inventory keys strictly matching ranking names
         if planet_cap in ['Jupiter', 'Venus', 'Mercury']:
             if good_val > 0: planet_data[planet_cap]['final_inventory'][planet_cap] = good_val
         elif planet_cap in ['Saturn', 'Rahu']:
@@ -314,7 +315,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         elif planet_cap == 'Ketu':
             if good_val > 0: planet_data[planet_cap]['final_inventory'][f"Good {planet_cap}"] = good_val
             if bad_val > 0: planet_data[planet_cap]['final_inventory'][f"Bad {planet_cap}"] = bad_val
-        else: # Sun, Mars, Moon
+        else:
             if good_val > 0:
                 key = f"Good {planet_cap}"
                 if planet_cap == 'Moon': key = "Good Moon"
@@ -327,7 +328,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # --- PHASE 1 LOGIC ---
     
     # 1. DEBTOR RANK (Who Eats First)
-    # Order: Rahu > Sun > Saturn > Amavasya > Mars > Heavy Moon > Light Moon > Ketu
     debtor_rank = []
     debtor_rank.append('Rahu')
     debtor_rank.append('Sun')
@@ -365,14 +365,11 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             idx = tithi_idx
             if phase == 'Purnima': return 1000
             
-            # Check if this key corresponds to the Good part
             if 'Good' in c_key or 'Moon' == c_key: 
                 if is_shukla:
-                    # Shukla 14(93) -> Score 900+. Pratipada(7) -> Score 500+
                     pct = shukla_good[idx]
                     return 500 + pct * 4 
                 else:
-                    # Krishna 1(93) -> Score 900+
                     pct = krishna_good[idx]
                     return 500 + pct * 4
         
@@ -380,27 +377,23 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if c_key == 'Venus': return 980
         if c_key == 'Mercury': return 970
         
-        if c_key == 'Good Mars': return 800 # 75%
-        if c_key == 'Good Sun': return 700 # 50%
+        if c_key == 'Good Mars': return 800 
+        if c_key == 'Good Sun': return 700 
         if c_key == 'Good Ketu': return 700
         
         # --- CATEGORY B (BAD) ---
-        # Prioritize Least Toxic (Lowest Bad%)
-        # Score = 400 - (Bad% * 3)
         if p_name == 'Moon' and 'Bad' in c_key:
             pct = planet_data['Moon']['moon_bad_pct']
             return 400 - (pct * 3)
             
-        if c_key == 'Bad Mars': return 325 # 25% -> 400 - 75 = 325
-        if c_key == 'Bad Sun': return 250 # 50%
-        if c_key == 'Bad Saturn': return 100 # 100%
+        if c_key == 'Bad Mars': return 325 
+        if c_key == 'Bad Sun': return 250 
+        if c_key == 'Bad Saturn': return 100 
         if c_key == 'Bad Rahu': return 100
         
         return 0
 
     # 3. CYCLE LOGIC
-    # Simultaneous Round Robin: Each debtor takes 1 unit from EVERY valid target in priority order per cycle.
-    
     loop_active = True
     cycle_limit = 200 # Safety Limit
     cycles = 0
@@ -410,26 +403,21 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         something_happened = False
         
         for debtor in debtor_rank:
-            # Skip if Full
             if planet_data[debtor]['current_debt'] >= -0.001: continue
             
-            # 1. Find Valid Targets
             potential_targets = []
             for t_name in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
                 if t_name == debtor: continue
                 
-                # Hierarchy Check
                 d_idx = debtor_rank.index(debtor) if debtor in debtor_rank else 99
                 t_idx = debtor_rank.index(t_name) if t_name in debtor_rank else 99
-                if d_idx > t_idx: continue # Lower (higher idx) cannot pull from Higher (lower idx)
+                if d_idx > t_idx: continue # Lower cannot pull from Higher
                 
-                # Special Restricted Diet for Ketu
                 if debtor == 'Ketu' and t_name not in ['Sun', 'Moon']: continue
                 
                 inv = planet_data[t_name]['final_inventory']
                 for key, val in inv.items():
                     if val > 0.001:
-                        # Degree Cap Check
                         L1 = planet_data[debtor]['L']
                         L2 = planet_data[t_name]['L']
                         diff = abs(L1 - L2)
@@ -453,39 +441,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                                 'max_pull': max_pull
                             })
 
-            # 2. Sort Targets (Category -> Distance)
-            # Higher Score = Better (Good > Bad). Within same score?
-            # Actually our Score function already separates Good (>500) and Bad (<500).
-            # Inside those ranges, we want to prioritize Distance.
-            # So Sort Key: (-Score, Gap) is wrong if Scores are distinct for every planet.
-            # But Scores ARE distinct for rank. 
-            # Wait, prompt says: "Within the chosen category, always pull from the Nearest Planet".
-            # This implies if I have Jupiter(Score 990) at 20deg and Venus(Score 980) at 2deg,
-            # I should pick Venus first?
-            # "Prioritize based on currency rank to decide where to pull from first" -> Previous prompt.
-            # "Priority 1 for pulling is distance" -> Latest prompt.
+            # Sort Targets: Score Descending (Good>Bad), Gap Ascending (Distance)
+            potential_targets.sort(key=lambda x: (-x['score'], x['gap']))
             
-            # Let's align with the latest strict instruction:
-            # "Priority 1 for pulling is distance"
-            # "Priority 2 is highest beneficiary..."
-            # Wait, "Category: Always try to pull Good Currency first... Only if empty, try Bad".
-            # So:
-            # 1. Split into Good Group (Score > 500) and Bad Group (Score < 500).
-            # 2. Inside Good Group: Sort by Distance (Gap).
-            # 3. Inside Bad Group: Sort by Distance (Gap).
-            # 4. Concatenate GoodList + BadList.
-            
-            good_targets = [t for t in potential_targets if t['score'] > 500]
-            bad_targets = [t for t in potential_targets if t['score'] <= 500]
-            
-            # Sort by Distance (Gap Ascending), then Score Descending (Tie-breaker)
-            good_targets.sort(key=lambda x: (x['gap'], -x['score']))
-            bad_targets.sort(key=lambda x: (x['gap'], -x['score']))
-            
-            final_target_order = good_targets + bad_targets
-            
-            # 3. Execute Round Robin Pulls
-            for tgt in final_target_order:
+            for tgt in potential_targets:
                 if planet_data[debtor]['current_debt'] >= -0.001: break
                 
                 avail = planet_data[tgt['planet']]['final_inventory'][tgt['key']]
@@ -497,31 +456,24 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 if cap_space <= 0: continue
                 
                 needed = abs(planet_data[debtor]['current_debt'])
-                take = min(1.0, avail, cap_space) # Take 1 unit or remainder logic applies? 
-                # Prompt said: "It takes one one unit from both untill the limit is exhausted... so it doesnt go one after the other."
-                # AND "pull from ALL planets available within reach untill cap".
-                # So we iterate the whole list and take 1.0 from each (if debt allows).
-                # But we must check debt AFTER every pull.
+                take = min(1.0, avail, cap_space) 
                 
                 if take > 0:
-                    # Update Target
                     planet_data[tgt['planet']]['final_inventory'][tgt['key']] -= take
                     planet_data[tgt['planet']]['current_debt'] -= take
                     
-                    # Update Debtor
                     planet_data[debtor]['final_inventory'][tgt['key']] += take
-                    planet_data[debtor][tracker_key] = pulled + take
                     
-                    # Update Debtor Debt Score (The Poison Rule)
-                    # Gaining Good -> +Take (Improve). Gaining Bad -> -Take (Worsen).
-                    is_bad = False
-                    if tgt['score'] <= 500: is_bad = True
+                    is_bad_currency = 'Bad' in tgt['key'] or tgt['key'] in ['Amavasya', 'Bad Saturn', 'Bad Rahu']
+                    if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency = True
+                    if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency = True
                     
-                    if is_bad:
-                        planet_data[debtor]['current_debt'] -= take
+                    if is_bad_currency:
+                        planet_data[debtor]['current_debt'] -= take # Worsen
                     else:
-                        planet_data[debtor]['current_debt'] += take
-                        
+                        planet_data[debtor]['current_debt'] += take # Improve
+                    
+                    planet_data[debtor][tracker_key] = pulled + take
                     something_happened = True
 
         if not something_happened: loop_active = False
@@ -775,8 +727,10 @@ if st.session_state.chart_data:
     st.subheader("Planetary Positions")
     st.dataframe(cd['df_planets'], hide_index=True, use_container_width=True)
 
-    st.subheader("Phase One Currency Exchange")
-    st.dataframe(cd['df_phase1'], hide_index=True, use_container_width=True)
+    # Check if Phase 1 data exists (Safety against old session state)
+    if 'df_phase1' in cd:
+        st.subheader("Phase One Currency Exchange")
+        st.dataframe(cd['df_phase1'], hide_index=True, use_container_width=True)
 
     st.subheader("Rasi (D1) & Navamsa (D9) — South Indian")
     col1, col2 = st.columns(2, gap="small")
