@@ -85,6 +85,9 @@ shukla_bad = [0] * 15
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
+# List of planets that only show Name[Value] without Good/Bad prefix
+single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
+
 # ---- Astro helpers ----
 def get_lahiri_ayanamsa(year):
     base = 23.853; rate = 50.2388/3600.0
@@ -259,13 +262,34 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             good_pct = good_capacity_dict.get(planet_cap, 0)
             bad_pct = bad_capacity_dict.get(planet_cap, 0)
 
-        # Calculate Default Currencies (Value * Percentage)
+        # Calculate Values
         good_val = volume * (good_pct / 100.0)
         bad_val = volume * (bad_pct / 100.0)
         
-        # Create the currency string
-        # Example format: Good Mars[37.50], Bad Mars[12.50]
-        default_currency_str = f"Good {planet_cap}[{good_val:.2f}], Bad {planet_cap}[{bad_val:.2f}]"
+        # --- Format Currency String ---
+        currency_parts = []
+        
+        # 1. Single Currency Planets (Venus, Jupiter, Mercury, Rahu, Ketu, Saturn)
+        if planet_cap in single_currency_planets:
+            # Sum logic ensures we pick up whichever side has the 100% (or the non-zero value)
+            total_val = good_val + bad_val
+            if total_val > 0:
+                currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
+        
+        # 2. Dual/Mixed Currency Planets (Sun, Mars) + Moon
+        else:
+            # Good component
+            if good_val > 0:
+                currency_parts.append(f"Good {planet_cap}[{good_val:.2f}]")
+            
+            # Bad component
+            # Logic: If bad score is 0, don't add. 
+            # Moon specific: "If it is towards full moon (Shukla), then no bad currency".
+            # (Note: In Shukla, bad_pct is already 0, so bad_val is 0, so it's handled by bad_val > 0 check)
+            if bad_val > 0:
+                currency_parts.append(f"Bad {planet_cap}[{bad_val:.2f}]")
+
+        default_currency_str = ", ".join(currency_parts)
         
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
