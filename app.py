@@ -24,7 +24,6 @@ cities_fallback = {
 }
 sign_names = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces']
 
-# Restored Missing Constant
 lords_full = ['Ketu','Venus','Sun','Moon','Mars','Rahu','Jupiter','Saturn','Mercury']
 lords_short = ['Ke','Ve','Su','Mo','Ma','Ra','Ju','Sa','Me']
 
@@ -63,19 +62,16 @@ capacity_dict = {
 }
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 75, 'Sun': 50, 'Jupiter': 100, 
-    'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 50
+    'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 0  # Updated to 0 for Ketu
 }
 bad_capacity_dict = {
     'Saturn': 100, 'Mars': 25, 'Sun': 50, 'Jupiter': 0, 
-    'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 50
+    'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 100 # Updated to 100 for Ketu
 }
 
-# Shukla Good Array
 shukla_good = [7, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
 shukla_bad = [0] * 15
-# Krishna Good Array
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
-# Krishna Bad Array
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
 shukla_tithi_names = ['Shukla Pratipada', 'Shukla Dwitiya', 'Shukla Tritiya', 'Shukla Chaturthi', 'Shukla Panchami', 'Shukla Shashti', 'Shukla Saptami', 'Shukla Ashtami', 'Shukla Navami', 'Shukla Dashami', 'Shukla Ekadashi', 'Shukla Dwadashi', 'Shukla Trayodashi', 'Shukla Chaturdashi', 'Purnima']
@@ -231,6 +227,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
     dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
     
+    # Corrected Ascendant Row (12 Items to match columns)
     rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', ''])
     
     # --- Initial Data Calculation ---
@@ -323,6 +320,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 if planet_cap == 'Moon': key = "Bad Moon"
                 planet_data[planet_cap]['final_inventory'][key] = bad_val
 
+    # --- PHASE 1 LOGIC ---
+    
+    # 1. DEBTOR RANK
     debtor_rank = []
     debtor_rank.append('Rahu')
     debtor_rank.append('Sun')
@@ -335,7 +335,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     moon_in_list = False
     
     if is_waning and moon_p['moon_phase'] == 'Amavasya':
-        debtor_rank.append('Moon') # Rank 4
+        debtor_rank.append('Moon') # Rank 4 (Amavasya)
         moon_in_list = True
         
     debtor_rank.append('Mars') # Rank 5
@@ -348,6 +348,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             
     debtor_rank.append('Ketu') # Rank 8
 
+    # 2. CURRENCY RANK (The Menu)
     def get_currency_rank_score(p_name, c_key):
         # Priority: Category A (Good) Score > 500, Category B (Bad) Score < 500
         
