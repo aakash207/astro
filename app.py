@@ -10,7 +10,6 @@ from geopy.extra.rate_limiter import RateLimiter
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 import io
-import copy
 # NEW: timezone detection for "Current City"
 from timezonefinder import TimezoneFinder
 import pytz
@@ -80,19 +79,19 @@ bad_capacity_dict = {
     'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 0
 }
 
-# Degree Gap Limits
-mix_dict = {0:100,1:100,2:100,3:95,4:90,5:85,6:80,7:75,8:70,9:65,10:60,11:55,12:50,13:45,14:40,15:35,16:30,17:25,18:20,19:15,20:10,21:5,22:0}
-
 # Moon Tithi Capacities
+# Shukla (Waxing/Towards Full Moon): Bad capacity is strictly 0
 shukla_good = [100, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
 shukla_bad = [0] * 15
+# Krishna (Waning/After Full Moon): Bad capacity increases
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
 # Single currency planets
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
 
-# Base Malefics
+# Malefics that create Debt (Saturn, Mars, Sun, Rahu)
+# Moon is handled conditionally
 base_malefics = ['Saturn', 'Mars', 'Sun', 'Rahu']
 
 # ---- Astro helpers ----
@@ -217,9 +216,14 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     moon_lon = lon_sid['moon']
     diff = (moon_lon - sun_lon) % 360
     
-    if diff < 180: paksha = 'Shukla'
-    else: paksha = 'Krishna'
+    # Waxing (Shukla): 0 -> 180 (Towards Full Moon)
+    # Waning (Krishna): 180 -> 360 (Towards New Moon)
+    if diff < 180:
+        paksha = 'Shukla'
+    else:
+        paksha = 'Krishna'
 
+    # Calculate Tithi (1-30)
     tithi_fraction = diff / 12
     tithi = int(tithi_fraction) + 1
     if tithi > 30: tithi = 30
@@ -238,292 +242,143 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     for p, L in positions.items():
         house_planets_rasi[get_house(L, lagna_sid)].append(p.capitalize() if p != 'asc' else 'Asc')
 
-    # Calculate initial values and debt for simulation
-    planet_objs = ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']
-    
-    sim_data = {}
-    
-    for p in planet_objs:
-        L = lon_sid[p.lower()]; sign = get_sign(L)
-        sthana = sthana_bala_dict.get(p, [0]*12)[sign_names.index(sign)]
-        capacity = capacity_dict.get(p, None)
-        volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
-        
-        # Determine Good/Bad Percentages
-        if p == 'Moon':
-            if paksha == 'Shukla':
-                good_pct = shukla_good[tithi_idx]
-                bad_pct = shukla_bad[tithi_idx]
-            else:
-                good_pct = krishna_good[tithi_idx]
-                bad_pct = krishna_bad[tithi_idx]
-        else:
-            good_pct = good_capacity_dict.get(p, 0)
-            bad_pct = bad_capacity_dict.get(p, 0)
-
-        good_val = volume * (good_pct / 100.0)
-        bad_val = volume * (bad_pct / 100.0)
-        
-        # Calculate Initial Debt
-        debt = 0.0
-        is_malefic = False
-        if p in base_malefics:
-            debt = -bad_val
-            is_malefic = True
-        elif p == 'Moon' and paksha == 'Krishna':
-            debt = -bad_val
-            is_malefic = True
-            
-        if p == 'Ketu':
-            debt = -bad_val - 50.0
-            is_malefic = True
-            
-        sim_data[p] = {
-            'Good': good_val,
-            'Bad': bad_val,
-            'Debt': debt,
-            'IsMalefic': is_malefic,
-            'GoodPct': good_pct,
-            'BadPct': bad_pct,
-            'Gained': defaultdict(float), # Track what we gained: {'Venus': 20, 'Good Mars': 5}
-            'L': L
-        }
-
-    # --- Phase One Currency Exchange Simulation ---
-    
-    # Define Rankings
-    # Debtor Rank: Rahu > Sun > Saturn > Mars > Ketu > Waning Moon
-    debtor_rank = ['Rahu', 'Sun', 'Saturn', 'Mars', 'Ketu']
-    if paksha == 'Krishna':
-        debtor_rank.append('Moon')
-
-    # Currency Rank (The Menu)
-    # Build list of (PlanetName, Type, SortValue)
-    # Type: 'Good' or 'Bad'
-    # Good Tier: Sort by GoodPct Descending
-    # Bad Tier: Sort by BadPct Ascending (Least bad first)
-    
-    good_menu = []
-    bad_menu = []
-    
-    for p in planet_objs:
-        # Add Good component if > 0
-        if sim_data[p]['Good'] > 0 or sim_data[p]['GoodPct'] > 0:
-            # Moon special handling for sort value if needed, but percentages work
-            good_menu.append((p, 'Good', sim_data[p]['GoodPct']))
-            
-        # Add Bad component if > 0
-        if sim_data[p]['Bad'] > 0 or sim_data[p]['BadPct'] > 0:
-            bad_menu.append((p, 'Bad', sim_data[p]['BadPct']))
-            
-    # Sort Menus
-    # Good: Descending %
-    good_menu.sort(key=lambda x: x[2], reverse=True)
-    # Bad: Ascending %
-    bad_menu.sort(key=lambda x: x[2])
-    
-    full_menu = good_menu + bad_menu # Good First, then Bad
-    
-    # Limits Tracker: (Debtor, Target) -> AmountPulled
-    pulled_amount = defaultdict(float)
-    
-    # Simulation Loop
-    step_size = 1.0
-    max_cycles = 1000 # Safety break
-    cycle = 0
-    
-    while cycle < max_cycles:
-        moves_made = False
-        
-        # Check if any debtor still needs to eat
-        any_hungry = False
-        for debtor in debtor_rank:
-            if sim_data[debtor]['Debt'] < -0.001: # Use epsilon for float comparison
-                any_hungry = True
-                break
-        
-        if not any_hungry:
-            break
-            
-        for debtor in debtor_rank:
-            if sim_data[debtor]['Debt'] >= -0.001:
-                continue # Full
-            
-            # Find best target
-            target_found = False
-            
-            # Scan Menu
-            for target_name, curr_type, pct in full_menu:
-                if target_name == debtor: continue
-                
-                # Ketu Rule: Only Sun/Moon
-                if debtor == 'Ketu' and target_name not in ['Sun', 'Moon']:
-                    continue
-                
-                # Check Currency Availability
-                available = sim_data[target_name][curr_type]
-                if available <= 0.001: continue
-                
-                # Check Connection / Degree Gap
-                dist = abs(sim_data[debtor]['L'] - sim_data[target_name]['L'])
-                if dist > 180: dist = 360 - dist
-                dist_int = int(dist)
-                
-                limit_pct = mix_dict.get(dist_int, 0)
-                if limit_pct == 0: continue # Not reachable
-                
-                # Check Cap
-                # Cap is based on TOTAL volume of target (Initial Good + Initial Bad)
-                # Or based on current? "maximum capacity to pull will become 55% it cant pull beyond that"
-                # Usually based on Initial total volume of the target.
-                # Let's calculate initial total once
-                initial_total = (capacity_dict.get(target_name,0) * sthana_bala_dict.get(target_name, [0]*12)[sign_names.index(get_sign(lon_sid[target_name.lower()]))] / 100.0)
-                
-                max_pullable = initial_total * (limit_pct / 100.0)
-                current_pulled = pulled_amount[(debtor, target_name)]
-                
-                if current_pulled >= max_pullable: continue
-                
-                # Valid Target Found
-                # Determine bite size
-                needed = abs(sim_data[debtor]['Debt'])
-                bite = min(step_size, available, max_pullable - current_pulled, needed)
-                
-                if bite <= 0.0001: continue
-                
-                # Execute Transaction
-                
-                # 1. Target Loses
-                sim_data[target_name][curr_type] -= bite
-                # Target Debt Increases (Target becomes debtor if it wasn't, or debt deepens)
-                # "Each currency a planet loose ... debt increases"
-                # For benefics starting at 0, this makes them negative.
-                sim_data[target_name]['Debt'] -= bite 
-                
-                # 2. Debtor Gains
-                # Track inventory
-                # Label: "Venus" or "Good Sun" or "Bad Sun"
-                label = target_name
-                if target_name not in single_currency_planets:
-                    label = f"{curr_type} {target_name}"
-                
-                sim_data[debtor]['Gained'][label] += bite
-                
-                # Debtor Debt Reduces (for both Good and Bad gain)
-                sim_data[debtor]['Debt'] += bite
-                
-                # 3. Track Cap
-                pulled_amount[(debtor, target_name)] += bite
-                
-                target_found = True
-                moves_made = True
-                break # Move to next debtor after one bite
-            
-        if not moves_made:
-            break
-        cycle += 1
-
-    # --- Formatting Outputs ---
-    
+    # planets table
     rows = []
-    planet_order_final = ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']
+    planet_data = {}
+    asc_deg = lagna_sid % 360; asc_sign = get_sign(asc_deg)
+    a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
+    dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
     
-    for p in planet_order_final:
-        d = sim_data[p]
-        
-        # Build Currency Phase 1 String
-        # Start with remaining initial holdings
-        curr_parts = []
-        
-        # Remaining Good
-        if d['Good'] > 0.01:
-            if p in single_currency_planets:
-                curr_parts.append(f"{p}[{d['Good']:.2f}]")
-            else:
-                curr_parts.append(f"Good {p}[{d['Good']:.2f}]")
-                
-        # Remaining Bad
-        if d['Bad'] > 0.01:
-            # Check Moon rule: Towards full moon (Shukla) -> no bad currency shown (it was 0 anyway)
-            # Just add logic as before
-            if not (p == 'Moon' and paksha == 'Shukla'):
-                 if p in single_currency_planets:
-                     # This case implies single currency planets have bad... 
-                     # Saturn/Rahu have 100 bad. They are single currency.
-                     # We display them as "Saturn[100]" usually.
-                     # The code for single_currency_planets logic in Step 1 was:
-                     # if single: Name[Total].
-                     # Here split is fine, but let's stick to Name[Val] if it's single
-                     # But wait, Single Planets like Saturn only have Bad.
-                     curr_parts.append(f"{p}[{d['Bad']:.2f}]")
-                 else:
-                     curr_parts.append(f"Bad {p}[{d['Bad']:.2f}]")
-
-        # Add Gained
-        for label, val in d['Gained'].items():
-            if val > 0.01:
-                curr_parts.append(f"{label}[{val:.2f}]")
-                
-        currency_str = ", ".join(curr_parts)
-        if not currency_str: currency_str = "-"
-        
-        # Build Debt Phase 1 String
-        # If debt is negative, show it. If >= 0, show - or 0?
-        # "If debt reaches 0... show - " for benefics usually?
-        # User said: "Just show number in debt column like -50 etc"
-        # And "For benefics: Shows - (as they started with 0 debt)" -> But they lose currency now, so they gain debt.
-        # "Target looses 1 unit... debt increases" -> Benefics will have negative debt now.
-        # So we show the number.
-        
-        debt_val = d['Debt']
-        if abs(debt_val) < 0.01:
-            debt_str = "0.00"
-        else:
-            debt_str = f"{debt_val:.2f}"
-            
-        # Re-gather basic data for table
-        # We need the original computed values from before simulation for the other columns
-        L = d['L']
-        sign = get_sign(L)
-        nak, pada, ld, sl = get_nakshatra_details(L)
+    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', ''])
+    
+    for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
+        L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
         dig_bala = calculate_dig_bala(p, L, lagna_sid)
-        sthana = sthana_bala_dict.get(p, [0]*12)[sign_names.index(sign)]
-        capacity = capacity_dict.get(p, None)
-        vol = (capacity * sthana / 100.0) if capacity is not None else 0.0
+        planet_cap = p.capitalize()
+        sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
         
-        # Status
+        # Calculate Status
         status = '-'
-        if p in status_data:
-            mapping = status_data[p]
+        if planet_cap in status_data:
+            mapping = status_data[planet_cap]
             if sign == mapping['Uchcham']: status = 'Uchcham'
             elif sign == mapping['Neecham']: status = 'Neecham'
             elif sign == mapping['Moolathirigonam']: status = 'Moolathirigonam'
             elif sign == mapping['Aatchi']: status = 'Aatchi'
-
-        # Default Currencies String (Pre-Simulation)
-        # Re-calc for display
-        def_parts = []
-        g_orig = vol * (d['GoodPct']/100.0)
-        b_orig = vol * (d['BadPct']/100.0)
+            
+        capacity = capacity_dict.get(planet_cap, None)
+        volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
         
-        if p in single_currency_planets:
-            tot = g_orig + b_orig
-            if tot > 0: def_parts.append(f"{p}[{tot:.2f}]")
+        # --- Step 2: Assign Good/Bad Percentages based on Phase ---
+        if planet_cap == 'Moon':
+            if paksha == 'Shukla':
+                good_pct = shukla_good[tithi_idx]
+                bad_pct = shukla_bad[tithi_idx] # 0
+            else:
+                good_pct = krishna_good[tithi_idx]
+                bad_pct = krishna_bad[tithi_idx]
         else:
-            if g_orig > 0: def_parts.append(f"Good {p}[{g_orig:.2f}]")
-            if b_orig > 0: def_parts.append(f"Bad {p}[{b_orig:.2f}]")
-        def_curr_str = ", ".join(def_parts)
+            good_pct = good_capacity_dict.get(planet_cap, 0)
+            bad_pct = bad_capacity_dict.get(planet_cap, 0)
+
+        # Calculate Values
+        good_val = volume * (good_pct / 100.0)
+        bad_val = volume * (bad_pct / 100.0)
         
+        # --- Format Currency String ---
+        currency_parts = []
+        if planet_cap in single_currency_planets:
+            total_val = good_val + bad_val
+            if total_val > 0:
+                currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
+        else:
+            if good_val > 0:
+                currency_parts.append(f"Good {planet_cap}[{good_val:.2f}]")
+            if bad_val > 0:
+                currency_parts.append(f"Bad {planet_cap}[{bad_val:.2f}]")
+
+        default_currency_str = ", ".join(currency_parts)
+        
+        # --- Calculate Debt ---
+        # Malefics: Saturn, Mars, Sun, Rahu
+        # Moon only if Krishna Paksha (Waning / Towards New Moon)
+        debt_str = '-'
+        is_malefic_debtor = False
+        
+        if planet_cap in base_malefics:
+            is_malefic_debtor = True
+        elif planet_cap == 'Moon' and paksha == 'Krishna':
+            is_malefic_debtor = True
+            
+        if is_malefic_debtor and bad_val > 0:
+            debt_str = f"-{bad_val:.2f}"
+
+        planet_data[planet_cap] = {
+            'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
+            'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
+            'status': status, 'default_currency': default_currency_str,
+            'debt': debt_str
+        }
+
+    # Build rows with Default Currencies column
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        data = planet_data[p]
         rows.append([
-            p, f"{L:.2f}", sign, nak, pada, f"{ld}/{sl}", 
-            f"{dig_bala}%" if dig_bala is not None else '', f"{sthana}%", 
-            status, f"{vol:.2f}", def_curr_str, currency_str, debt_str
+            p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], 
+            f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", 
+            data['status'], f"{data['volume']:.2f}", data['default_currency'], data['debt']
         ])
-        
-    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Currency [Phase 1]', 'Debt [Phase 1]'])
     
-    # ... (Rest of formatting for Rasi/Nav/Dasa remains same)
+    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Debt'])
+
+    # df_rasi
+    df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
+                             ', '.join(sorted(house_planets_rasi[h])) if house_planets_rasi[h] else 'Empty'] 
+                            for h in range(1,13)], columns=['House','Sign','Planets'])
+
+    # navamsa
+    nav_lagna = (lagna_sid*9) % 360
+    house_planets_nav = defaultdict(list)
+    for p,L in lon_sid.items():
+        nav_lon = (L*9) % 360
+        nav_h = (int(nav_lon/30) - int(nav_lagna/30)) % 12 + 1
+        house_planets_nav[nav_h].append(p.capitalize())
     
+    df_nav = pd.DataFrame([[f"House {h}", get_sign((nav_lagna+(h-1)*30)%360), 
+                             ', '.join(sorted(house_planets_nav[h])) if house_planets_nav[h] else 'Empty'] 
+                            for h in range(1,13)], columns=['House','Sign','Planets'])
+
+    # aspects table
+    lagna_sign = get_sign(lagna_sid)
+    aspects_dict = {'Sun':[7],'Moon':[7],'Mars':[4,7,8],'Mercury':[7],'Jupiter':[5,7,9],'Venus':[7],'Saturn':[3,7,10]}
+    planet_to_house = {p.capitalize(): get_house(lon_sid[p], lagna_sid) for p in lon_sid}
+    house_status = []
+    for h in range(1,13):
+        lord = sign_lords[(sign_names.index(lagna_sign)+(h-1))%12]
+        lord_house = planet_to_house[lord]
+        asp = []
+        for planet, offs in aspects_dict.items():
+            if planet in planet_to_house:
+                ph = planet_to_house[planet]
+                for off in offs:
+                    if ((ph-1+(off-1))%12)+1 == h: asp.append(planet)
+        house_status.append([f"House {h}", 
+                             ', '.join(sorted(house_planets_rasi[h])) if house_planets_rasi[h] else 'Empty',
+                             ', '.join(asp) if asp else 'None', lord, f"House {lord_house}"])
+    df_house_status = pd.DataFrame(house_status, columns=['House','Planets','Aspects from','Lord','Lord in'])
+
+    # dasa tree
+    moon_lon = lon_sid['moon']
+    idx, bal = generate_vimshottari_dasa(moon_lon)
+    full_first = years[idx]; passed = full_first - bal
+    dasa_start = utc_dt - timedelta(days=passed*365.25)
+    dasa = generate_periods(dasa_start, idx, 120, 'dasa', max_depth)
+    dasa_filtered = filter_from_birth(dasa, utc_dt)
+
+    depth_map = {1:'Dasa only',2:'Dasa + Bhukti',3:'Dasa + Bhukti + Anthara',
+                 4:'Dasa + Bhukti + Anthara + Sukshma',5:'Dasa + Bhukti + Anthara + Sukshma + Prana',
+                 6:'Dasa + Bhukti + Anthara + Sukshma + Prana + Sub-Prana'}
+
     return {
         'name': name, 'df_planets': df_planets, 'df_rasi': df_rasi, 'df_nav': df_nav,
         'df_house_status': df_house_status, 'dasa_periods_filtered': dasa_filtered,
