@@ -24,6 +24,13 @@ cities_fallback = {
     'Kolkata': {'lat': 22.57, 'lon': 88.36}, 'Hyderabad': {'lat': 17.39, 'lon': 78.49},
 }
 sign_names = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces']
+# Mapping for Tamil sign names used in status calculation
+tamil_to_english = {
+    'Mesham': 'Aries', 'Rishabam': 'Taurus', 'Mithunam': 'Gemini', 'Kadagam': 'Cancer',
+    'Simmam': 'Leo', 'Kanni': 'Virgo', 'Thulam': 'Libra', 'Viruchigam': 'Scorpio',
+    'Dhanusu': 'Sagittarius', 'Magaram': 'Capricorn', 'Kumbam': 'Aquarius', 'Meenam': 'Pisces'
+}
+
 lords_full = ['Ketu','Venus','Sun','Moon','Mars','Rahu','Jupiter','Saturn','Mercury']
 lords_short = ['Ke','Ve','Su','Mo','Ma','Ra','Ju','Sa','Me']
 nak_names = ['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punarvasu','Pushya','Ashlesha',
@@ -44,6 +51,18 @@ sthana_bala_dict = {
     'Rahu': [100]*12,
     'Ketu': [100]*12
 }
+
+# Status Mapping based on User Image
+status_data = {
+    'Sun': {'Uchcham': 'Aries', 'Moolathirigonam': None, 'Aatchi': 'Leo', 'Neecham': 'Libra'},
+    'Moon': {'Uchcham': 'Taurus', 'Moolathirigonam': None, 'Aatchi': 'Cancer', 'Neecham': 'Scorpio'},
+    'Jupiter': {'Uchcham': 'Cancer', 'Moolathirigonam': 'Sagittarius', 'Aatchi': 'Pisces', 'Neecham': 'Capricorn'},
+    'Venus': {'Uchcham': 'Pisces', 'Moolathirigonam': 'Libra', 'Aatchi': 'Taurus', 'Neecham': 'Virgo'},
+    'Mercury': {'Uchcham': 'Virgo', 'Moolathirigonam': None, 'Aatchi': 'Gemini', 'Neecham': 'Pisces'},
+    'Mars': {'Uchcham': 'Capricorn', 'Moolathirigonam': 'Aries', 'Aatchi': 'Scorpio', 'Neecham': 'Cancer'},
+    'Saturn': {'Uchcham': 'Libra', 'Moolathirigonam': 'Aquarius', 'Aatchi': 'Capricorn', 'Neecham': 'Aries'}
+}
+
 capacity_dict = {
     'Saturn': 100,
     'Mars': 50,
@@ -173,7 +192,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     lon_sid = {p: get_sidereal_lon(lon_trop[p], ayan) for p in lon_trop}
     lagna_sid = get_sidereal_lon(get_ascendant(jd, lat, lon), ayan)
     
-    # rasi houses first for conjunctions
+    # rasi houses
     house_planets_rasi = defaultdict(list)
     positions = {**lon_sid, 'asc': lagna_sid}
     for p, L in positions.items():
@@ -186,24 +205,41 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
     dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
     
-    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', ''])
+    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', ''])
     
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
         dig_bala = calculate_dig_bala(p, L, lagna_sid)
         planet_cap = p.capitalize()
         sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
+        
+        # Calculate Status based on uploaded image data
+        status = '-'
+        if planet_cap in status_data:
+            mapping = status_data[planet_cap]
+            if sign == mapping['Uchcham']: status = 'Uchcham'
+            elif sign == mapping['Neecham']: status = 'Neecham'
+            elif sign == mapping['Moolathirigonam']: status = 'Moolathirigonam'
+            elif sign == mapping['Aatchi']: status = 'Aatchi'
+            
         capacity = capacity_dict.get(planet_cap, None)
         volume = (capacity * sthana / 100.0) if capacity is not None else ''
         
-        planet_data[planet_cap] = {'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}"}
+        planet_data[planet_cap] = {
+            'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
+            'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 'status': status
+        }
 
-    # Build rows
+    # Build rows with new Status column
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         data = planet_data[p]
-        rows.append([p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", f"{data['volume']:.2f}" if isinstance(data['volume'], float) else ''])
+        rows.append([
+            p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], 
+            f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", 
+            data['status'], f"{data['volume']:.2f}" if isinstance(data['volume'], float) else ''
+        ])
     
-    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Volume'])
+    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume'])
 
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
@@ -471,12 +507,14 @@ if st.session_state.chart_data:
                     st.success(f"Time zone: {tz.zone} • Local now: {now_local.strftime('%Y-%m-%d %H:%M')}")
                     if active_path:
                         tbl = []
-                        for lord, s, e in flat_at_depth:
-                            if s <= now_utc_naive < e: # Found current index
-                                start_idx = flat_at_depth.index((lord,s,e))
-                                for l,st_t,en_t in flat_at_depth[start_idx : start_idx+6]:
-                                    tbl.append({"Lord": l, "Start (local)": st_t.replace(tzinfo=pytz.UTC).astimezone(tz).strftime('%Y-%m-%d %H:%M'), "End (local)": en_t.replace(tzinfo=pytz.UTC).astimezone(tz).strftime('%Y-%m-%d %H:%M'), "Duration": duration_str(en_t-st_t, depth_choice.lower())})
+                        idx_found = -1
+                        for i, (lord, s, e) in enumerate(flat_at_depth):
+                            if s <= now_utc_naive < e:
+                                idx_found = i
                                 break
+                        if idx_found != -1:
+                            for l,st_t,en_t in flat_at_depth[idx_found : idx_found+6]:
+                                tbl.append({"Lord": l, "Start (local)": st_t.replace(tzinfo=pytz.UTC).astimezone(tz).strftime('%Y-%m-%d %H:%M'), "End (local)": en_t.replace(tzinfo=pytz.UTC).astimezone(tz).strftime('%Y-%m-%d %H:%M'), "Duration": duration_str(en_t-st_t, depth_choice.lower())})
                         st.dataframe(pd.DataFrame(tbl), hide_index=True, use_container_width=True)
             except Exception as e: st.error(f"Error: {e}")
 
