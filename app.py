@@ -81,6 +81,7 @@ krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 # Single currency planets
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
 bad_currency_planets = ['Saturn', 'Rahu', 'Ketu']
+base_malefics = ['Saturn', 'Mars', 'Sun', 'Rahu']
 
 # ---- Astro helpers ----
 def get_lahiri_ayanamsa(year):
@@ -304,18 +305,26 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         
         # --- Calculate Debt ---
         total_debt = 0.0
+        has_debt = False
         
-        if status == 'Neecham' and capacity is not None:
-            # If Neecham, use specific formulas
-            if sthana < 40:
-                total_debt = -(capacity * 0.85)
-            else:
-                total_debt = -(volume * 2)
+        # NEW LOGIC: If NOT Neecham, default total bad currency becomes debt
+        # If Neecham, use special Neecham debt calculation
+        if status == 'Neecham':
+            # Neecham debt calculation
+            if capacity is not None:
+                if sthana < 40:
+                    neecham_debt_addition = -(capacity * 0.85)
+                else:
+                    neecham_debt_addition = -(volume * 2)
+                total_debt = neecham_debt_addition
+                has_debt = True
         else:
-            # DEFAULT: If not Neecham, Debt is the negative of Total Bad Currency
-            total_debt = -bad_val
+            # Not Neecham - default debt is negative of total bad currency
+            if bad_val > 0:
+                total_debt = -bad_val
+                has_debt = True
         
-        # --- Check for Neechabhangam (Updates Neecham planets) ---
+        # --- Check for Neechabhangam ---
         updated_status = '-'
         neechabhangam_good_add = 0.0
         neechabhangam_bad_add = 0.0
@@ -345,22 +354,22 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 good_val += neechabhangam_good_add
                 bad_val += neechabhangam_bad_add
                 
-                # --- Special Step for Sun and Mars to Fix Debt in Neechabhangam ---
-                # Formula: Debt = (120% of Capacity) - Good Currency
-                # We store debt as negative logic, so total_debt = -((1.2 * Capacity) - Good_Val)
-                if planet_cap in ['Sun', 'Mars'] and capacity is not None:
-                    limit_val = 1.2 * capacity # 120
-                    special_debt = limit_val - good_val
-                    total_debt = -special_debt
-
-        # Determine if there is actual debt to display
-        # Benefics (Jup/Ven/Mer/Moon-Shukla) will have 0 bad_val and thus 0 debt in default case.
-        # Malefics will have negative debt.
-        if total_debt < 0:
+                if neechabhangam_good_add > 0 or neechabhangam_bad_add > 0:
+                    has_debt = True
+        
+        # --- Special Step for Sun and Mars to Fix Debt ---
+        # Formula: Debt = (120% of Capacity) - Good Currency
+        # We store debt as negative logic, so total_debt = -((1.2 * Capacity) - Good_Val)
+        if planet_cap in ['Sun', 'Mars'] and capacity is not None:
+            limit_val = 1.2 * capacity # 120
+            special_debt = limit_val - good_val
+            total_debt = -special_debt
             has_debt = True
+
+        # Format debt string
+        if has_debt:
             debt_str = f"{total_debt:.2f}"
         else:
-            has_debt = False
             debt_str = '-'
         
         # --- Format Currency String ---
