@@ -9,7 +9,6 @@ from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
-# NEW: timezone detection for "Current City"
 from timezonefinder import TimezoneFinder
 import pytz
 
@@ -63,13 +62,14 @@ capacity_dict = {
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
 # Good/Bad percentages
+# UPDATED: Ketu set to 0 Good, 100 Bad to ensure it holds 50 bad currency by default
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 25, 'Sun': 50, 'Jupiter': 100, 
-    'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 100
+    'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 0
 }
 bad_capacity_dict = {
     'Saturn': 100, 'Mars': 75, 'Sun': 50, 'Jupiter': 0, 
-    'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 0
+    'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 100
 }
 
 # Moon Tithi Capacities
@@ -258,7 +258,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         planet_status_map[planet_cap] = status
 
     # --- Calculate Parivardhana Yoga ---
-    # Parivardhana: Two planets in each other's signs (mutual exchange)
     parivardhana_map = {}
     planets_for_parivardhana = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
     
@@ -272,8 +271,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             lord_of_that_sign = get_sign_lord(sign_of_lord)  # Lord of that sign
             
             if lord_of_that_sign == planet_a and planet_a != lord_of_sign_a:
-                # Mutual exchange exists!
-                # Get house numbers for display
                 house_a = get_house(lon_sid[planet_a.lower()], lagna_sid)
                 house_b = get_house(lon_sid[lord_of_sign_a.lower()], lagna_sid)
                 parivardhana_map[planet_a] = f"{lord_of_sign_a} (H{house_a}-H{house_b})"
@@ -333,7 +330,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         updated_status = '-'
         is_neechabhangam = False
         
-        # --- Check for Neechabhangam FIRST ---
+        # --- Check for Neechabhangam FIRST & Update Currency ---
         if status == 'Neecham':
             house_lord = get_sign_lord(sign)
             house_lord_status = planet_status_map.get(house_lord, '-')
@@ -353,31 +350,17 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 good_val += neechabhangam_good_add
                 bad_val += neechabhangam_bad_add
         
-        # --- Calculate Debt based on status ---
-        if status == 'Neecham' and not is_neechabhangam:
-            # Pure Neecham - use Neecham debt calculation
+        # --- Calculate Debt using Universal Formula for Neecham/Neechabhangam ---
+        if status == 'Neecham' or is_neechabhangam:
             if capacity is not None:
-                if sthana < 40:
-                    # Sthana Bala < 40%: Debt = -(85% of Capacity)
-                    total_debt = -(capacity * 0.85)
-                else:
-                    # Sthana Bala >= 40%: Debt = -(120% of Capacity - Good Currency)
-                    total_debt = -((1.2 * capacity) - good_val)
-                has_debt = True
-        elif is_neechabhangam:
-            # Neechabhangam - apply special rule for Sun, Moon and Mars
-            # Use UPDATED good_val (after adding neechabhangam currencies)
-            if planet_cap in ['Sun', 'Moon', 'Mars'] and capacity is not None:
-                # Formula: Debt = -(120% of Capacity - Good Currency)
+                # Same formula for all planets, all volumes.
+                # Debt = -(120% of Capacity - Good Currency)
+                # If Neechabhangam, good_val already includes the added currency.
                 total_debt = -((1.2 * capacity) - good_val)
                 has_debt = True
-            else:
-                # For other Neechabhangam planets, default debt = -bad_val
-                if bad_val > 0:
-                    total_debt = -bad_val
-                    has_debt = True
         else:
             # Not Neecham or Neechabhangam - default debt is negative of total bad currency
+            # Applies to Ketu as well (if not Neecham) since bad_val will be high
             if bad_val > 0:
                 total_debt = -bad_val
                 has_debt = True
