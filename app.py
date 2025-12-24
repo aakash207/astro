@@ -338,8 +338,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         
         # Neecham debt calculation for ALL planets
         # Formula depends on sthana_bala:
-        # If sthana_bala <= 40%: Debt += -(capacity × 0.85)
-        # If sthana_bala > 40%: Debt += -(volume × 2)
+        # If sthana_bala < 40%: Debt += -(capacity × 0.85)
+        # If sthana_bala >= 40%: Debt += -(volume × 2)
         if status == 'Neecham' and capacity is not None:
             if sthana <= 40:
                 neecham_debt_addition = -(capacity * 0.85)
