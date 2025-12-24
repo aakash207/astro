@@ -66,12 +66,12 @@ status_data = {
     'Saturn': {'Uchcham': 'Libra', 'Moolathirigonam': 'Aquarius', 'Aatchi': 'Capricorn', 'Neecham': 'Aries'}
 }
 
-# Capacity percentages
+# Capacity percentages (default volume)
 capacity_dict = {
     'Saturn': 100, 'Mars': 100, 'Sun': 100, 'Jupiter': 100, 
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
-# Good/Bad percentages - Mars swapped: Good=25%, Bad=75%
+# Good/Bad percentages - Mars: Good=25%, Bad=75%
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 25, 'Sun': 50, 'Jupiter': 100, 
     'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 100
@@ -198,6 +198,11 @@ def get_navamsa_sign(lon):
     nav_lon = (lon * 9) % 360
     return get_sign(nav_lon)
 
+def get_sign_lord(sign):
+    """Get the lord of a sign"""
+    sign_idx = sign_names.index(sign)
+    return sign_lords[sign_idx]
+
 def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # parse time
     try:
@@ -252,6 +257,24 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     for p, L in positions.items():
         house_planets_rasi[get_house(L, lagna_sid)].append(p.capitalize() if p != 'asc' else 'Asc')
 
+    # First pass: Calculate status for all planets (needed for Neechabhangam check)
+    planet_status_map = {}
+    planet_sign_map = {}
+    for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
+        L = lon_sid[p]
+        sign = get_sign(L)
+        planet_cap = p.capitalize()
+        planet_sign_map[planet_cap] = sign
+        
+        status = '-'
+        if planet_cap in status_data:
+            mapping = status_data[planet_cap]
+            if sign == mapping['Uchcham']: status = 'Uchcham'
+            elif sign == mapping['Neecham']: status = 'Neecham'
+            elif sign == mapping['Moolathirigonam']: status = 'Moolathirigonam'
+            elif sign == mapping['Aatchi']: status = 'Aatchi'
+        planet_status_map[planet_cap] = status
+
     # planets table
     rows = []
     planet_data = {}
@@ -263,11 +286,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     asc_nav_sign = get_navamsa_sign(asc_deg)
     asc_vargothuva = 'Yes' if asc_sign == asc_nav_sign else 'No'
     
-    # Planet Strength for Asc (no sthana bala, so just use dig bala or leave empty)
-    asc_planet_strength = ''
-    
     rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", asc_vargothuva, 
-                 f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', asc_planet_strength, '', '', '', ''])
+                 f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', '', ''])
     
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
@@ -279,22 +299,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         nav_sign = get_navamsa_sign(L)
         vargothuva = 'Yes' if sign == nav_sign else 'No'
         
-        # Calculate Planet Strength = (Dig Bala + Sthana Bala) / 2
-        if dig_bala is not None:
-            planet_strength = (dig_bala + sthana) / 2
-            planet_strength_str = f"{planet_strength:.2f}%"
-        else:
-            planet_strength = sthana / 2  # If no dig bala, use half of sthana bala
-            planet_strength_str = f"{planet_strength:.2f}%"
-        
-        # Calculate Status
-        status = '-'
-        if planet_cap in status_data:
-            mapping = status_data[planet_cap]
-            if sign == mapping['Uchcham']: status = 'Uchcham'
-            elif sign == mapping['Neecham']: status = 'Neecham'
-            elif sign == mapping['Moolathirigonam']: status = 'Moolathirigonam'
-            elif sign == mapping['Aatchi']: status = 'Aatchi'
+        # Get status from pre-calculated map
+        status = planet_status_map[planet_cap]
             
         capacity = capacity_dict.get(planet_cap, None)
         volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
@@ -315,6 +321,71 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         good_val = volume * (good_pct / 100.0)
         bad_val = volume * (bad_pct / 100.0)
         
+        # --- Calculate Debt ---
+        total_debt = 0.0
+        has_debt = False
+        
+        # Initial debt from malefics
+        is_malefic_debtor = False
+        if planet_cap in base_malefics:
+            is_malefic_debtor = True
+        elif planet_cap == 'Moon' and paksha == 'Krishna':
+            is_malefic_debtor = True
+            
+        if is_malefic_debtor and bad_val > 0:
+            total_debt = -bad_val
+            has_debt = True
+        
+        # Neecham debt calculation for ALL planets
+        # Formula depends on sthana_bala:
+        # If sthana_bala <= 40%: Debt += -(capacity × 0.85)
+        # If sthana_bala > 40%: Debt += -(volume × 2)
+        if status == 'Neecham' and capacity is not None:
+            if sthana <= 40:
+                neecham_debt_addition = -(capacity * 0.85)
+            else:
+                neecham_debt_addition = -(volume * 2)
+            total_debt += neecham_debt_addition
+            has_debt = True
+        
+        # --- Check for Neechabhangam ---
+        # If planet is Neecham AND house lord is in Uchcham or Moolathirigonam
+        updated_status = '-'
+        neechabhangam_good_add = 0.0
+        neechabhangam_bad_add = 0.0
+        
+        if status == 'Neecham':
+            # Find the lord of the sign where this planet sits
+            house_lord = get_sign_lord(sign)
+            house_lord_status = planet_status_map.get(house_lord, '-')
+            
+            # Check if house lord is in Uchcham or Moolathirigonam
+            if house_lord_status in ['Uchcham', 'Moolathirigonam']:
+                updated_status = 'Neechabhangam'
+                
+                # Add 40% of default volume in default proportions
+                # neechabhangam_good = 0.40 × (capacity × good_pct / 100)
+                # neechabhangam_bad = 0.40 × (capacity × bad_pct / 100)
+                neechabhangam_good_add = 0.40 * (capacity * good_pct / 100.0)
+                neechabhangam_bad_add = 0.40 * (capacity * bad_pct / 100.0)
+                
+                # Modify debt: decrease for good, increase for bad
+                total_debt += neechabhangam_good_add  # Good reduces debt (adds positive)
+                total_debt -= neechabhangam_bad_add   # Bad increases debt (subtracts/adds negative)
+                
+                # Add to currency values
+                good_val += neechabhangam_good_add
+                bad_val += neechabhangam_bad_add
+                
+                if neechabhangam_good_add > 0 or neechabhangam_bad_add > 0:
+                    has_debt = True
+        
+        # Format debt string
+        if has_debt:
+            debt_str = f"{total_debt:.2f}"
+        else:
+            debt_str = '-'
+        
         # --- Format Currency String ---
         currency_parts = []
         if planet_cap in single_currency_planets:
@@ -332,43 +403,15 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 currency_parts.append(f"Bad {planet_cap}[{bad_val:.2f}]")
 
         default_currency_str = ", ".join(currency_parts)
-        
-        # --- Calculate Debt ---
-        # Malefics: Saturn, Mars, Sun, Rahu
-        # Moon only if Krishna Paksha (Waning / Towards New Moon)
-        debt_str = '-'
-        total_debt = 0.0
-        has_debt = False
-        
-        # Initial debt from malefics
-        is_malefic_debtor = False
-        if planet_cap in base_malefics:
-            is_malefic_debtor = True
-        elif planet_cap == 'Moon' and paksha == 'Krishna':
-            is_malefic_debtor = True
-            
-        if is_malefic_debtor and bad_val > 0:
-            total_debt = -bad_val
-            has_debt = True
-        
-        # Neecham debt calculation for ALL planets
-        # Formula: add -(capacity * (100 - sthana_bala) / 100) to debt
-        if status == 'Neecham' and capacity is not None:
-            neecham_debt_addition = -(capacity * (100 - sthana) / 100.0)
-            total_debt += neecham_debt_addition
-            has_debt = True
-        
-        if has_debt:
-            debt_str = f"{total_debt:.2f}"
 
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
             'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
             'status': status, 'default_currency': default_currency_str,
-            'debt': debt_str, 'vargothuva': vargothuva, 'planet_strength': planet_strength_str
+            'debt': debt_str, 'vargothuva': vargothuva, 'updated_status': updated_status
         }
 
-    # Build rows with Vargothuva column before Dig Bala, and Planet Strength between Sthana Bala and Status
+    # Build rows with all columns
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         data = planet_data[p]
         rows.append([
@@ -376,15 +419,15 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             data['vargothuva'],
             f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', 
             f"{data['sthana']}%", 
-            data['planet_strength'],
-            data['status'], 
+            data['status'],
+            data['updated_status'],
             f"{data['volume']:.2f}", 
             data['default_currency'], 
             data['debt']
         ])
     
     df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Vargothuva',
-                                              'Dig Bala (%)','Sthana Bala (%)','Planet Strength','Status',
+                                              'Dig Bala (%)','Sthana Bala (%)','Status','Updated Status',
                                               'Volume', 'Default Currencies', 'Debt'])
 
     # df_rasi
