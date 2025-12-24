@@ -71,13 +71,13 @@ capacity_dict = {
     'Saturn': 100, 'Mars': 100, 'Sun': 100, 'Jupiter': 100, 
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
-# Good/Bad percentages
+# Good/Bad percentages - Mars swapped: Good=25%, Bad=75%
 good_capacity_dict = {
-    'Saturn': 0, 'Mars': 75, 'Sun': 50, 'Jupiter': 100, 
+    'Saturn': 0, 'Mars': 25, 'Sun': 50, 'Jupiter': 100, 
     'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 100
 }
 bad_capacity_dict = {
-    'Saturn': 100, 'Mars': 25, 'Sun': 50, 'Jupiter': 0, 
+    'Saturn': 100, 'Mars': 75, 'Sun': 50, 'Jupiter': 0, 
     'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 0
 }
 
@@ -263,7 +263,11 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     asc_nav_sign = get_navamsa_sign(asc_deg)
     asc_vargothuva = 'Yes' if asc_sign == asc_nav_sign else 'No'
     
-    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", asc_vargothuva, f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', ''])
+    # Planet Strength for Asc (no sthana bala, so just use dig bala or leave empty)
+    asc_planet_strength = ''
+    
+    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", asc_vargothuva, 
+                 f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', asc_planet_strength, '', '', '', ''])
     
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
@@ -274,6 +278,14 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         # Calculate Vargothuva status
         nav_sign = get_navamsa_sign(L)
         vargothuva = 'Yes' if sign == nav_sign else 'No'
+        
+        # Calculate Planet Strength = (Dig Bala + Sthana Bala) / 2
+        if dig_bala is not None:
+            planet_strength = (dig_bala + sthana) / 2
+            planet_strength_str = f"{planet_strength:.2f}%"
+        else:
+            planet_strength = sthana / 2  # If no dig bala, use half of sthana bala
+            planet_strength_str = f"{planet_strength:.2f}%"
         
         # Calculate Status
         status = '-'
@@ -325,40 +337,55 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         # Malefics: Saturn, Mars, Sun, Rahu
         # Moon only if Krishna Paksha (Waning / Towards New Moon)
         debt_str = '-'
-        is_malefic_debtor = False
+        total_debt = 0.0
+        has_debt = False
         
+        # Initial debt from malefics
+        is_malefic_debtor = False
         if planet_cap in base_malefics:
             is_malefic_debtor = True
         elif planet_cap == 'Moon' and paksha == 'Krishna':
             is_malefic_debtor = True
             
         if is_malefic_debtor and bad_val > 0:
-            initial_debt = -bad_val
-            # If planet is Neecham, debt = initial_debt - (volume * 2)
-            if status == 'Neecham':
-                final_debt = initial_debt - (volume * 2)
-                debt_str = f"{final_debt:.2f}"
-            else:
-                debt_str = f"{initial_debt:.2f}"
+            total_debt = -bad_val
+            has_debt = True
+        
+        # Neecham debt calculation for ALL planets
+        # Formula: add -(capacity * (100 - sthana_bala) / 100) to debt
+        if status == 'Neecham' and capacity is not None:
+            neecham_debt_addition = -(capacity * (100 - sthana) / 100.0)
+            total_debt += neecham_debt_addition
+            has_debt = True
+        
+        if has_debt:
+            debt_str = f"{total_debt:.2f}"
 
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
             'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
             'status': status, 'default_currency': default_currency_str,
-            'debt': debt_str, 'vargothuva': vargothuva
+            'debt': debt_str, 'vargothuva': vargothuva, 'planet_strength': planet_strength_str
         }
 
-    # Build rows with Vargothuva column before Dig Bala
+    # Build rows with Vargothuva column before Dig Bala, and Planet Strength between Sthana Bala and Status
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         data = planet_data[p]
         rows.append([
             p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], 
             data['vargothuva'],
-            f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", 
-            data['status'], f"{data['volume']:.2f}", data['default_currency'], data['debt']
+            f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', 
+            f"{data['sthana']}%", 
+            data['planet_strength'],
+            data['status'], 
+            f"{data['volume']:.2f}", 
+            data['default_currency'], 
+            data['debt']
         ])
     
-    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Vargothuva','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Debt'])
+    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Vargothuva',
+                                              'Dig Bala (%)','Sthana Bala (%)','Planet Strength','Status',
+                                              'Volume', 'Default Currencies', 'Debt'])
 
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
