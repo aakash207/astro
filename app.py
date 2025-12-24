@@ -360,6 +360,15 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 if neechabhangam_good_add > 0 or neechabhangam_bad_add > 0:
                     has_debt = True
         
+        # --- Special Step for Sun and Mars to fix debt (AFTER Neechabhangam) ---
+        if planet_cap in ['Sun', 'Mars']:
+            # Formula: 120% of Default Capacity (100) - Bad Currency
+            # 120 - bad_val
+            target_vol = 120.0
+            new_good = target_vol - bad_val
+            # Update good_val to this fixed amount
+            good_val = max(0.0, new_good)
+        
         # Format debt string
         if has_debt:
             debt_str = f"{total_debt:.2f}"
