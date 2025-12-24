@@ -68,7 +68,7 @@ status_data = {
 
 # Capacity percentages
 capacity_dict = {
-    'Saturn': 100, 'Mars': 50, 'Sun': 100, 'Jupiter': 100, 
+    'Saturn': 100, 'Mars': 100, 'Sun': 100, 'Jupiter': 100, 
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
 # Good/Bad percentages
