@@ -303,28 +303,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         good_val = volume * (good_pct / 100.0)
         bad_val = volume * (bad_pct / 100.0)
         
-        # --- Calculate Debt ---
-        total_debt = 0.0
-        has_debt = False
-        
-        # NEW LOGIC: If NOT Neecham, default total bad currency becomes debt
-        # If Neecham, use special Neecham debt calculation
-        if status == 'Neecham':
-            # Neecham debt calculation
-            if capacity is not None:
-                if sthana < 40:
-                    neecham_debt_addition = -(capacity * 0.85)
-                else:
-                    neecham_debt_addition = -(volume * 2)
-                total_debt = neecham_debt_addition
-                has_debt = True
-        else:
-            # Not Neecham - default debt is negative of total bad currency
-            if bad_val > 0:
-                total_debt = -bad_val
-                has_debt = True
-        
-        # --- Check for Neechabhangam ---
+        # --- Check for Neechabhangam FIRST ---
         updated_status = '-'
         neechabhangam_good_add = 0.0
         neechabhangam_bad_add = 0.0
@@ -344,27 +323,45 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 neechabhangam_good_add = nb_base_vol * (good_pct / 100.0)
                 neechabhangam_bad_add = nb_base_vol * (bad_pct / 100.0)
                 
-                # Modify debt: 
-                # Good reduces debt (add positive)
-                # Bad increases debt (subtract positive value -> make it more negative)
-                total_debt += neechabhangam_good_add 
-                total_debt -= neechabhangam_bad_add 
-                
                 # Add to currency values
                 good_val += neechabhangam_good_add
                 bad_val += neechabhangam_bad_add
-                
-                if neechabhangam_good_add > 0 or neechabhangam_bad_add > 0:
-                    has_debt = True
         
-        # --- Special Step for Sun and Mars to Fix Debt ---
-        # Formula: Debt = (120% of Capacity) - Good Currency
-        # We store debt as negative logic, so total_debt = -((1.2 * Capacity) - Good_Val)
-        if planet_cap in ['Sun', 'Mars'] and capacity is not None:
-            limit_val = 1.2 * capacity # 120
-            special_debt = limit_val - good_val
-            total_debt = -special_debt
-            has_debt = True
+        # --- Calculate Debt based on final status ---
+        total_debt = 0.0
+        has_debt = False
+        
+        # Determine final status for debt calculation
+        final_status = updated_status if updated_status == 'Neechabhangam' else status
+        
+        if final_status == 'Neecham':
+            # Neecham debt calculation (planet is in Neecham but NOT Neechabhangam)
+            if capacity is not None:
+                if sthana < 40:
+                    total_debt = -(capacity * 0.85)
+                else:
+                    total_debt = -(volume * 2)
+                has_debt = True
+        elif final_status == 'Neechabhangam':
+            # Neechabhangam debt calculation
+            # Good reduces debt (positive), Bad increases debt (negative)
+            total_debt = neechabhangam_good_add - neechabhangam_bad_add
+            has_debt = True if (neechabhangam_good_add > 0 or neechabhangam_bad_add > 0) else False
+            
+            # Special Step for Sun and Mars ONLY if Neechabhangam
+            # Formula: Debt = (120% of Capacity) - Good Currency
+            # We store debt as negative logic, so total_debt = -((1.2 * Capacity) - Good_Val)
+            if planet_cap in ['Sun', 'Mars'] and capacity is not None:
+                limit_val = 1.2 * capacity  # 120
+                special_debt = limit_val - good_val
+                total_debt = -special_debt
+                has_debt = True
+        else:
+            # Not Neecham or Neechabhangam
+            # Default: total bad currency becomes debt
+            if bad_val > 0:
+                total_debt = -bad_val
+                has_debt = True
 
         # Format debt string
         if has_debt:
