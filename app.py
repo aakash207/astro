@@ -41,9 +41,11 @@ nak_names = ['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punar
 years = [7, 20, 6, 10, 7, 18, 16, 19, 17] * 3
 sign_lords = ['Mars','Venus','Mercury','Moon','Sun','Mercury','Venus','Mars','Jupiter','Saturn','Saturn','Jupiter']
 
+# Updated sthana_bala_dict with Moon values from the image
+# Order: Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
 sthana_bala_dict = {
     'Sun': [100,90,80,70,60,50,40,50,60,70,80,90],
-    'Moon': [90,100,90,80,70,60,60,50,70,70,70,90],
+    'Moon': [70,100,70,80,70,60,50,40,50,60,60,70],  # Updated from image
     'Jupiter': [60,60,70,100,90,60,75,60,80,40,50,80],
     'Venus': [60,70,60,50,40,35,80,50,60,80,70,100],
     'Mercury': [40,60,70,45,60,100,60,45,55,50,45,35],
@@ -87,8 +89,11 @@ shukla_bad = [0] * 15
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
-# Single currency planets
+# Single currency planets - now Saturn, Rahu, Ketu are named "Bad X"
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
+
+# Planets that use "Bad" prefix in their currency name
+bad_currency_planets = ['Saturn', 'Rahu', 'Ketu']
 
 # Malefics that create Debt (Saturn, Mars, Sun, Rahu)
 # Moon is handled conditionally
@@ -188,6 +193,11 @@ def calculate_dig_bala(planet, lon, lagna):
     percentage = (virupas / 60) * 100
     return round(percentage, 2)
 
+def get_navamsa_sign(lon):
+    """Calculate the Navamsa (D9) sign for a given longitude"""
+    nav_lon = (lon * 9) % 360
+    return get_sign(nav_lon)
+
 def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # parse time
     try:
@@ -249,13 +259,21 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
     dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
     
-    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', ''])
+    # Vargothuva for Ascendant
+    asc_nav_sign = get_navamsa_sign(asc_deg)
+    asc_vargothuva = 'Yes' if asc_sign == asc_nav_sign else 'No'
+    
+    rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", asc_vargothuva, f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', ''])
     
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
         dig_bala = calculate_dig_bala(p, L, lagna_sid)
         planet_cap = p.capitalize()
         sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
+        
+        # Calculate Vargothuva status
+        nav_sign = get_navamsa_sign(L)
+        vargothuva = 'Yes' if sign == nav_sign else 'No'
         
         # Calculate Status
         status = '-'
@@ -290,7 +308,11 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if planet_cap in single_currency_planets:
             total_val = good_val + bad_val
             if total_val > 0:
-                currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
+                # Saturn, Rahu, Ketu use "Bad X" prefix
+                if planet_cap in bad_currency_planets:
+                    currency_parts.append(f"Bad {planet_cap}[{total_val:.2f}]")
+                else:
+                    currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
         else:
             if good_val > 0:
                 currency_parts.append(f"Good {planet_cap}[{good_val:.2f}]")
@@ -311,25 +333,32 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             is_malefic_debtor = True
             
         if is_malefic_debtor and bad_val > 0:
-            debt_str = f"-{bad_val:.2f}"
+            initial_debt = -bad_val
+            # If planet is Neecham, debt = initial_debt - (volume * 2)
+            if status == 'Neecham':
+                final_debt = initial_debt - (volume * 2)
+                debt_str = f"{final_debt:.2f}"
+            else:
+                debt_str = f"{initial_debt:.2f}"
 
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
             'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
             'status': status, 'default_currency': default_currency_str,
-            'debt': debt_str
+            'debt': debt_str, 'vargothuva': vargothuva
         }
 
-    # Build rows with Default Currencies column
+    # Build rows with Vargothuva column before Dig Bala
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         data = planet_data[p]
         rows.append([
             p, f"{data['L']:.2f}", data['sign'], data['nak'], data['pada'], data['ld_sl'], 
+            data['vargothuva'],
             f"{data['dig_bala']}%" if data['dig_bala'] is not None else '', f"{data['sthana']}%", 
             data['status'], f"{data['volume']:.2f}", data['default_currency'], data['debt']
         ])
     
-    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Debt'])
+    df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Vargothuva','Dig Bala (%)','Sthana Bala (%)','Status','Volume', 'Default Currencies', 'Debt'])
 
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
