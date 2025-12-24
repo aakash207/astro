@@ -9,7 +9,6 @@ from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
-import io
 # NEW: timezone detection for "Current City"
 from timezonefinder import TimezoneFinder
 import pytz
@@ -25,13 +24,6 @@ cities_fallback = {
 }
 sign_names = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces']
 
-# Mapping for Tamil sign names used in status calculation
-tamil_to_english = {
-    'Mesham': 'Aries', 'Rishabam': 'Taurus', 'Mithunam': 'Gemini', 'Kadagam': 'Cancer',
-    'Simmam': 'Leo', 'Kanni': 'Virgo', 'Thulam': 'Libra', 'Viruchigam': 'Scorpio',
-    'Dhanusu': 'Sagittarius', 'Magaram': 'Capricorn', 'Kumbam': 'Aquarius', 'Meenam': 'Pisces'
-}
-
 lords_full = ['Ketu','Venus','Sun','Moon','Mars','Rahu','Jupiter','Saturn','Mercury']
 lords_short = ['Ke','Ve','Su','Mo','Ma','Ra','Ju','Sa','Me']
 nak_names = ['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punarvasu','Pushya','Ashlesha',
@@ -41,8 +33,7 @@ nak_names = ['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punar
 years = [7, 20, 6, 10, 7, 18, 16, 19, 17] * 3
 sign_lords = ['Mars','Venus','Mercury','Moon','Sun','Mercury','Venus','Mars','Jupiter','Saturn','Saturn','Jupiter']
 
-# Updated sthana_bala_dict with Moon values
-# Order: Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
+# Sthana Bala Dict
 sthana_bala_dict = {
     'Sun': [100,90,80,70,60,50,40,50,60,70,80,90],
     'Moon': [70,100,70,80,70,60,50,40,50,60,60,70], 
@@ -82,21 +73,14 @@ bad_capacity_dict = {
 }
 
 # Moon Tithi Capacities
-# Shukla (Waxing/Towards Full Moon): Bad capacity is strictly 0
 shukla_good = [100, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
 shukla_bad = [0] * 15
-# Krishna (Waning/After Full Moon): Bad capacity increases
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
 
-# Single currency planets - now Saturn, Rahu, Ketu are named "Bad X"
+# Single currency planets
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
-
-# Planets that use "Bad" prefix in their currency name
 bad_currency_planets = ['Saturn', 'Rahu', 'Ketu']
-
-# Malefics that create Debt (Saturn, Mars, Sun, Rahu)
-# Moon is handled conditionally
 base_malefics = ['Saturn', 'Mars', 'Sun', 'Rahu']
 
 # ---- Astro helpers ----
@@ -194,12 +178,10 @@ def calculate_dig_bala(planet, lon, lagna):
     return round(percentage, 2)
 
 def get_navamsa_sign(lon):
-    """Calculate the Navamsa (D9) sign for a given longitude"""
     nav_lon = (lon * 9) % 360
     return get_sign(nav_lon)
 
 def get_sign_lord(sign):
-    """Get the lord of a sign"""
     sign_idx = sign_names.index(sign)
     return sign_lords[sign_idx]
 
@@ -257,7 +239,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     for p, L in positions.items():
         house_planets_rasi[get_house(L, lagna_sid)].append(p.capitalize() if p != 'asc' else 'Asc')
 
-    # First pass: Calculate status for all planets (needed for Neechabhangam check)
+    # First pass: Calculate status for all planets
     planet_status_map = {}
     planet_sign_map = {}
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
@@ -309,7 +291,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if planet_cap == 'Moon':
             if paksha == 'Shukla':
                 good_pct = shukla_good[tithi_idx]
-                bad_pct = shukla_bad[tithi_idx] # 0
+                bad_pct = shukla_bad[tithi_idx] # Always 0 for Shukla
             else:
                 good_pct = krishna_good[tithi_idx]
                 bad_pct = krishna_bad[tithi_idx]
@@ -337,9 +319,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             has_debt = True
         
         # Neecham debt calculation for ALL planets
-        # Formula depends on sthana_bala:
-        # If sthana_bala < 40%: Debt += -(capacity × 0.85)
-        # If sthana_bala >= 40%: Debt += -(volume × 2)
         if status == 'Neecham' and capacity is not None:
             if sthana < 40:
                 neecham_debt_addition = -(capacity * 0.85)
@@ -349,29 +328,28 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             has_debt = True
         
         # --- Check for Neechabhangam ---
-        # If planet is Neecham AND house lord is in Uchcham or Moolathirigonam
         updated_status = '-'
         neechabhangam_good_add = 0.0
         neechabhangam_bad_add = 0.0
         
         if status == 'Neecham':
-            # Find the lord of the sign where this planet sits
             house_lord = get_sign_lord(sign)
             house_lord_status = planet_status_map.get(house_lord, '-')
             
-            # Check if house lord is in Uchcham or Moolathirigonam
             if house_lord_status in ['Uchcham', 'Moolathirigonam']:
                 updated_status = 'Neechabhangam'
                 
-                # Add 40% of Capacity (user instruction: same logic for moon, so using calculated percentages)
+                # Add 40% of Capacity
                 nb_base_vol = capacity * 0.40
                 
+                # Split based on efficiency (good_pct/bad_pct)
+                # IMPORTANT for Moon: If Shukla, bad_pct is 0, so bad_add is 0.
                 neechabhangam_good_add = nb_base_vol * (good_pct / 100.0)
                 neechabhangam_bad_add = nb_base_vol * (bad_pct / 100.0)
                 
                 # Modify debt: 
-                # Increase debt [make it more negative] for each bad currency
-                # Reduce debt for each good currency
+                # Good reduces debt (add positive)
+                # Bad increases debt (subtract positive value -> make it more negative)
                 total_debt += neechabhangam_good_add 
                 total_debt -= neechabhangam_bad_add 
                 
