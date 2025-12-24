@@ -41,11 +41,11 @@ nak_names = ['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punar
 years = [7, 20, 6, 10, 7, 18, 16, 19, 17] * 3
 sign_lords = ['Mars','Venus','Mercury','Moon','Sun','Mercury','Venus','Mars','Jupiter','Saturn','Saturn','Jupiter']
 
-# Updated sthana_bala_dict with Moon values from the image
+# Updated sthana_bala_dict with Moon values
 # Order: Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
 sthana_bala_dict = {
     'Sun': [100,90,80,70,60,50,40,50,60,70,80,90],
-    'Moon': [70,100,70,80,70,60,50,40,50,60,60,70],  # Updated from image
+    'Moon': [70,100,70,80,70,60,50,40,50,60,60,70], 
     'Jupiter': [60,60,70,100,90,60,75,60,80,40,50,80],
     'Venus': [60,70,60,50,40,35,80,50,60,80,70,100],
     'Mercury': [40,60,70,45,60,100,60,45,55,50,45,35],
@@ -71,7 +71,7 @@ capacity_dict = {
     'Saturn': 100, 'Mars': 100, 'Sun': 100, 'Jupiter': 100, 
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
-# Good/Bad percentages - Mars: Good=25%, Bad=75%
+# Good/Bad percentages
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 25, 'Sun': 50, 'Jupiter': 100, 
     'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 100
@@ -333,7 +333,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             is_malefic_debtor = True
             
         if is_malefic_debtor and bad_val > 0:
-            total_debt = -bad_val
+            total_debt = -bad_val # Initial debt = -(total bad currencies)
             has_debt = True
         
         # Neecham debt calculation for ALL planets
@@ -341,7 +341,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         # If sthana_bala < 40%: Debt += -(capacity × 0.85)
         # If sthana_bala >= 40%: Debt += -(volume × 2)
         if status == 'Neecham' and capacity is not None:
-            if sthana <= 40:
+            if sthana < 40:
                 neecham_debt_addition = -(capacity * 0.85)
             else:
                 neecham_debt_addition = -(volume * 2)
@@ -363,15 +363,17 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             if house_lord_status in ['Uchcham', 'Moolathirigonam']:
                 updated_status = 'Neechabhangam'
                 
-                # Add 40% of default volume in default proportions
-                # neechabhangam_good = 0.40 × (capacity × good_pct / 100)
-                # neechabhangam_bad = 0.40 × (capacity × bad_pct / 100)
-                neechabhangam_good_add = 0.40 * (capacity * good_pct / 100.0)
-                neechabhangam_bad_add = 0.40 * (capacity * bad_pct / 100.0)
+                # Add 40% of Capacity (user instruction: same logic for moon, so using calculated percentages)
+                nb_base_vol = capacity * 0.40
                 
-                # Modify debt: decrease for good, increase for bad
-                total_debt += neechabhangam_good_add  # Good reduces debt (adds positive)
-                total_debt -= neechabhangam_bad_add   # Bad increases debt (subtracts/adds negative)
+                neechabhangam_good_add = nb_base_vol * (good_pct / 100.0)
+                neechabhangam_bad_add = nb_base_vol * (bad_pct / 100.0)
+                
+                # Modify debt: 
+                # Increase debt [make it more negative] for each bad currency
+                # Reduce debt for each good currency
+                total_debt += neechabhangam_good_add 
+                total_debt -= neechabhangam_bad_add 
                 
                 # Add to currency values
                 good_val += neechabhangam_good_add
@@ -427,8 +429,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         ])
     
     df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Vargothuva',
-                                              'Dig Bala (%)','Sthana Bala (%)','Status','Updated Status',
-                                              'Volume', 'Default Currencies', 'Debt'])
+                                             'Dig Bala (%)','Sthana Bala (%)','Status','Updated Status',
+                                             'Volume', 'Default Currencies', 'Debt'])
 
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
@@ -444,8 +446,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         house_planets_nav[nav_h].append(p.capitalize())
     
     df_nav = pd.DataFrame([[f"House {h}", get_sign((nav_lagna+(h-1)*30)%360), 
-                             ', '.join(sorted(house_planets_nav[h])) if house_planets_nav[h] else 'Empty'] 
-                            for h in range(1,13)], columns=['House','Sign','Planets'])
+                            ', '.join(sorted(house_planets_nav[h])) if house_planets_nav[h] else 'Empty'] 
+                           for h in range(1,13)], columns=['House','Sign','Planets'])
 
     # aspects table
     lagna_sign = get_sign(lagna_sid)
