@@ -358,19 +358,18 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             # Pure Neecham - use Neecham debt calculation
             if capacity is not None:
                 if sthana < 40:
-                    # Sthana Bala < 40%: Debt = -(Capacity × 0.85)
+                    # Sthana Bala < 40%: Debt = -(85% of Capacity)
                     total_debt = -(capacity * 0.85)
                 else:
-                    # Sthana Bala >= 40%: Debt = -(Volume × 2)
-                    total_debt = -(volume * 2)
+                    # Sthana Bala >= 40%: Debt = -(120% of Capacity - Good Currency)
+                    total_debt = -((1.2 * capacity) - good_val)
                 has_debt = True
         elif is_neechabhangam:
-            # Neechabhangam - apply special rule ONLY for Sun and Mars
-            if planet_cap in ['Sun', 'Mars'] and capacity is not None:
-                # Formula: Debt = (120% of Capacity) - Good Currency
-                limit_val = 1.2 * capacity  # 120
-                special_debt = limit_val - good_val
-                total_debt = -special_debt
+            # Neechabhangam - apply special rule for Sun, Moon and Mars
+            # Use UPDATED good_val (after adding neechabhangam currencies)
+            if planet_cap in ['Sun', 'Moon', 'Mars'] and capacity is not None:
+                # Formula: Debt = -(120% of Capacity - Good Currency)
+                total_debt = -((1.2 * capacity) - good_val)
                 has_debt = True
             else:
                 # For other Neechabhangam planets, default debt = -bad_val
@@ -378,18 +377,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                     total_debt = -bad_val
                     has_debt = True
         else:
-            # Not Neecham - default debt is negative of total bad currency
+            # Not Neecham or Neechabhangam - default debt is negative of total bad currency
             if bad_val > 0:
                 total_debt = -bad_val
                 has_debt = True
-        
-        # --- Special Step for Sun and Mars (NOT in Neecham/Neechabhangam) ---
-        # Formula: Debt = (120% of Capacity) - Good Currency
-        if planet_cap in ['Sun', 'Mars'] and status != 'Neecham' and capacity is not None:
-            limit_val = 1.2 * capacity  # 120
-            special_debt = limit_val - good_val
-            total_debt = -special_debt
-            has_debt = True
 
         # Format debt string
         if has_debt:
