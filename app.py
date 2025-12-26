@@ -242,11 +242,13 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # First pass: Calculate status and sign for all planets
     planet_status_map = {}
     planet_sign_map = {}
+    planet_house_map = {}
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]
         sign = get_sign(L)
         planet_cap = p.capitalize()
         planet_sign_map[planet_cap] = sign
+        planet_house_map[planet_cap] = get_house(L, lagna_sid)
         
         status = '-'
         if planet_cap in status_data:
@@ -259,6 +261,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
 
     # --- Calculate Parivardhana Yoga ---
     parivardhana_map = {}
+    parivardhanai_partner = {}  # Simple map: planet -> partner planet
     planets_for_parivardhana = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
     
     for planet_a in planets_for_parivardhana:
@@ -274,6 +277,45 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 house_a = get_house(lon_sid[planet_a.lower()], lagna_sid)
                 house_b = get_house(lon_sid[lord_of_sign_a.lower()], lagna_sid)
                 parivardhana_map[planet_a] = f"{lord_of_sign_a} (H{house_a}-H{house_b})"
+                parivardhanai_partner[planet_a] = lord_of_sign_a
+    
+    # --- Calculate Original Sthana Bala for all planets ---
+    original_sthana = {}
+    for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
+        planet_cap = p.capitalize()
+        sign = planet_sign_map[planet_cap]
+        original_sthana[planet_cap] = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
+    
+    # --- Step 1: Parivardhanai Swap Sthana Bala ---
+    swapped_sthana = original_sthana.copy()
+    processed_pairs = set()
+    for planet_a, partner in parivardhanai_partner.items():
+        pair_key = tuple(sorted([planet_a, partner]))
+        if pair_key not in processed_pairs:
+            # Swap sthana bala between partners
+            swapped_sthana[planet_a] = original_sthana[partner]
+            swapped_sthana[partner] = original_sthana[planet_a]
+            processed_pairs.add(pair_key)
+    
+    # --- Calculate Vargothuva for all planets ---
+    vargothuva_map = {}
+    for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
+        planet_cap = p.capitalize()
+        L = lon_sid[p]
+        sign = planet_sign_map[planet_cap]
+        nav_sign = get_navamsa_sign(L)
+        vargothuva_map[planet_cap] = 'Yes' if sign == nav_sign else 'No'
+    
+    # --- Step 2: Apply Vargothuva bonus (+20) after parivardhanai swap ---
+    final_sthana = swapped_sthana.copy()
+    for planet_cap, vargothuva in vargothuva_map.items():
+        if vargothuva == 'Yes':
+            final_sthana[planet_cap] = swapped_sthana[planet_cap] + 20
+    
+    # --- Build house to planets mapping for neechabhangam by house sharing ---
+    house_to_planets = defaultdict(list)
+    for planet_cap, house_num in planet_house_map.items():
+        house_to_planets[house_num].append(planet_cap)
     
     # planets table
     rows = []
@@ -293,11 +335,12 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
         dig_bala = calculate_dig_bala(p, L, lagna_sid)
         planet_cap = p.capitalize()
-        sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
         
-        # Calculate Vargothuva status
-        nav_sign = get_navamsa_sign(L)
-        vargothuva = 'Yes' if sign == nav_sign else 'No'
+        # Use final_sthana (after parivardhanai swap and vargothuva bonus)
+        sthana = final_sthana.get(planet_cap, 0)
+        
+        # Get Vargothuva from pre-calculated map
+        vargothuva = vargothuva_map[planet_cap]
         
         # Get Parivardhana status
         parivardhana = parivardhana_map.get(planet_cap, '-')
@@ -329,6 +372,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         has_debt = False
         updated_status = '-'
         is_neechabhangam = False
+        neechabhangam_no_currency = False  # Flag for neechabhangam by house sharing (no currency added)
         
         # --- Check for Neechabhangam FIRST & Update Currency ---
         if status == 'Neecham':
@@ -336,6 +380,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             house_lord_status = planet_status_map.get(house_lord, '-')
             
             if house_lord_status in ['Uchcham', 'Moolathirigonam']:
+                # Original Neechabhangam logic - add currency
                 updated_status = 'Neechabhangam'
                 is_neechabhangam = True
                 
@@ -349,13 +394,27 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 # Add to currency values
                 good_val += neechabhangam_good_add
                 bad_val += neechabhangam_bad_add
+            else:
+                # --- Fallback: Check if neecham planet shares house with uchcham/moolathirigonam planet ---
+                current_house = planet_house_map[planet_cap]
+                planets_in_same_house = house_to_planets[current_house]
+                
+                for other_planet in planets_in_same_house:
+                    if other_planet != planet_cap:
+                        other_status = planet_status_map.get(other_planet, '-')
+                        if other_status in ['Uchcham', 'Moolathirigonam']:
+                            # Neechabhangam by house sharing - NO currency added
+                            updated_status = 'Neechabhangam'
+                            is_neechabhangam = True
+                            neechabhangam_no_currency = True
+                            break
         
         # --- Calculate Debt using Universal Formula for Neecham/Neechabhangam ---
         if status == 'Neecham' or is_neechabhangam:
             if capacity is not None:
                 # Same formula for all planets, all volumes.
                 # Debt = -(120% of Capacity - Good Currency)
-                # If Neechabhangam, good_val already includes the added currency.
+                # If Neechabhangam, good_val already includes the added currency (unless neechabhangam_no_currency).
                 total_debt = -((1.2 * capacity) - good_val)
                 has_debt = True
         else:
@@ -364,6 +423,12 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             if bad_val > 0:
                 total_debt = -bad_val
                 has_debt = True
+
+        # --- Step 3: Moon Debt Correction ---
+        # If Moon has no bad currency, debt = -(20% of good currency)
+        if planet_cap == 'Moon' and bad_val == 0:
+            total_debt = -(0.20 * good_val)
+            has_debt = True if total_debt != 0 else False
 
         # Format debt string
         if has_debt:
