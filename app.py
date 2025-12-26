@@ -62,7 +62,6 @@ capacity_dict = {
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
 # Good/Bad percentages
-# UPDATED: Ketu set to 0 Good, 100 Bad to ensure it holds 50 bad currency by default
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 25, 'Sun': 50, 'Jupiter': 100, 
     'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 0
@@ -259,6 +258,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
 
     # --- Calculate Parivardhana Yoga ---
     parivardhana_map = {}
+    parivardhana_partner_map = {} # Maps Planet -> The Partner Planet it exchanged with
     planets_for_parivardhana = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
     
     for planet_a in planets_for_parivardhana:
@@ -274,6 +274,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 house_a = get_house(lon_sid[planet_a.lower()], lagna_sid)
                 house_b = get_house(lon_sid[lord_of_sign_a.lower()], lagna_sid)
                 parivardhana_map[planet_a] = f"{lord_of_sign_a} (H{house_a}-H{house_b})"
+                parivardhana_partner_map[planet_a] = lord_of_sign_a
     
     # planets table
     rows = []
@@ -289,74 +290,43 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", asc_vargothuva, '-',
                  f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', '', ''])
     
-    # --- Pre-calculate Sthana Bala for Modification ---
-    planet_calc_temp = {}
-    all_planets = ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']
-    
-    for p in all_planets:
+    for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
+        L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
+        dig_bala = calculate_dig_bala(p, L, lagna_sid)
         planet_cap = p.capitalize()
-        L = lon_sid[p]
-        sign = get_sign(L)
-        # Raw sthana from dict
-        sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
         
-        nav_sign = get_navamsa_sign(L)
-        vargothuva = 'Yes' if sign == nav_sign else 'No'
+        # Get Parivardhana status
         parivardhana = parivardhana_map.get(planet_cap, '-')
         
-        planet_calc_temp[planet_cap] = {
-            'sthana': sthana,
-            'vargothuva': vargothuva,
-            'parivardhana': parivardhana,
-            'L': L,
-            'sign': sign
-        }
-
-    # --- 1. Parivardhana Sthana Swap ---
-    # We must ensure we swap pairs only once.
-    swapped_planets = set()
-    for p_name, data in planet_calc_temp.items():
-        if p_name in parivardhana_map and p_name not in swapped_planets:
-            # Parse the other planet name from the string "PlanetName (H...)"
-            other_p_str = parivardhana_map[p_name]
-            other_p_name = other_p_str.split(' ')[0]
-            
-            if other_p_name in planet_calc_temp and other_p_name not in swapped_planets:
-                # Perform Swap of Sthana Bala
-                val_a = planet_calc_temp[p_name]['sthana']
-                val_b = planet_calc_temp[other_p_name]['sthana']
-                
-                planet_calc_temp[p_name]['sthana'] = val_b
-                planet_calc_temp[other_p_name]['sthana'] = val_a
-                
-                swapped_planets.add(p_name)
-                swapped_planets.add(other_p_name)
-
-    # --- 2. Vargothuva Boost (+20%) ---
-    for p_name, data in planet_calc_temp.items():
-        if data['vargothuva'] == 'Yes':
-            planet_calc_temp[p_name]['sthana'] += 20
-
-    # --- Main Loop for Volume & Currency ---
-    for p in all_planets:
-        planet_cap = p.capitalize()
-        calc_data = planet_calc_temp[planet_cap]
+        # 1. Parivardhana Change Sthana Balam Logic
+        # If Parivardhana exists, use Sthana Balam of the sign where the exchanged planet is residing
+        if planet_cap in parivardhana_partner_map:
+            partner = parivardhana_partner_map[planet_cap]
+            # Planet A acts as if it is in the house of Planet B (where Planet B is currently residing logic effectively)
+            # The prompt says: "as if if the planet is in the house where the other planet with which it is in parivardhanai is in"
+            # Planet A is in House X (Owned by B). Planet B is in House Y (Owned by A).
+            # A exchanges with B. A is treated as if it is in House Y.
+            target_sign = planet_sign_map[partner]
+            sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(target_sign)]
+        else:
+            sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
         
-        L = calc_data['L']
-        sign = calc_data['sign']
-        sthana = calc_data['sthana'] # This is now the modified sthana
-        vargothuva = calc_data['vargothuva']
-        parivardhana = calc_data['parivardhana']
+        # Calculate Vargothuva status
+        nav_sign = get_navamsa_sign(L)
+        vargothuva = 'Yes' if sign == nav_sign else 'No'
         
-        nak, pada, ld, sl = get_nakshatra_details(L)
-        dig_bala = calculate_dig_bala(p, L, lagna_sid)
+        # 2. Vargothuva Update: Add 20% to Sthana Balam if Vargothuva (Before Volume Calculation)
+        if vargothuva == 'Yes':
+            sthana += 20
+
+        # Get status from pre-calculated map
         status = planet_status_map[planet_cap]
             
         capacity = capacity_dict.get(planet_cap, None)
-        # Volume Calculation using modified Sthana
+        # Volume Calculation using Updated Sthana
         volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
         
-        # --- Assign Good/Bad Percentages based on Phase ---
+        # --- Step 2: Assign Good/Bad Percentages based on Phase ---
         if planet_cap == 'Moon':
             if paksha == 'Shukla':
                 good_pct = shukla_good[tithi_idx]
@@ -377,29 +347,29 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         has_debt = False
         updated_status = '-'
         is_neechabhangam = False
-        special_moon_debt_applied = False
-        
-        # --- 3. Moon Specific Debt Logic (Before Neechabhangam/Standard Debt) ---
+        moon_debt_special_applied = False
+
+        # 3. Moon Debt Correction Logic (Before Neechabhangam)
         if planet_cap == 'Moon' and status == 'Neecham':
-            # Check if moon has no bad currency (which implies bad_val is effectively 0 based on capacity logic)
-            if bad_val <= 0: 
-                # Switch debt to -[20% of the good currency it holds]
+            # if moon has no bad currency
+            if bad_val == 0:
+                # switch debt to -[20% of the good currency it holds]
                 total_debt = -(0.20 * good_val)
                 has_debt = True
-                special_moon_debt_applied = True
-                # "do this before checking neechabhangam... No need to apply the other update debt logic here."
+                moon_debt_special_applied = True
+                # "Skip the other debt correction logic which recalculates with 120% for this type of moon"
         
-        # --- Check for Neechabhangam (Update Status & Currency) ---
+        # --- Check for Neechabhangam & Update Currency ---
         if status == 'Neecham':
             house_lord = get_sign_lord(sign)
             house_lord_status = planet_status_map.get(house_lord, '-')
             
-            # Original Neechabhangam Logic
+            # Condition 1: Lord is Uchcham or Moolathirigonam
             if house_lord_status in ['Uchcham', 'Moolathirigonam']:
                 updated_status = 'Neechabhangam'
                 is_neechabhangam = True
                 
-                # Add 40% of Capacity (Standard Logic)
+                # Add 40% of Capacity (Existing Logic)
                 nb_base_vol = capacity * 0.40
                 
                 # Split based on efficiency (good_pct/bad_pct)
@@ -410,31 +380,26 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 good_val += neechabhangam_good_add
                 bad_val += neechabhangam_bad_add
             
-            # --- 4. Fallback Neechabhangam (Co-presence) ---
-            else:
-                # Check if Neecham planet shares house with Uchcham or Moolathirigonam
-                # Get planets in this sign
-                planets_in_this_sign = [pn for pn, s in planet_sign_map.items() if s == sign and pn != planet_cap]
-                
-                found_savior = False
-                for other_p in planets_in_this_sign:
-                    if planet_status_map.get(other_p) in ['Uchcham', 'Moolathirigonam']:
-                        found_savior = True
-                        break
-                
-                if found_savior:
-                    updated_status = 'Neechabhangam'
-                    is_neechabhangam = True
-                    # "Dont add currency for this case" - Logic stops here for fallback.
-
-        # --- Standard Debt Logic (Skipped if special Moon logic applied) ---
-        if not special_moon_debt_applied:
-            # Calculate Debt using Universal Formula for Neecham/Neechabhangam
+            # 4. Fallback Strategy: If neecham planet shares house with Uchcham or Moola thirigonam planet
+            elif not is_neechabhangam:
+                # Check other planets in the same sign
+                for other_p, other_s in planet_sign_map.items():
+                    if other_s == sign and other_p != planet_cap:
+                        other_status = planet_status_map.get(other_p, '-')
+                        if other_status in ['Uchcham', 'Moolathirigonam']:
+                            updated_status = 'Neechabhangam'
+                            is_neechabhangam = True
+                            # "Dont add currency for this case" - Logic satisfied by not adding code here
+                            break
+        
+        # --- Calculate Debt using Universal Formula for Neecham/Neechabhangam ---
+        # Only apply standard debt logic if the special Moon logic wasn't applied
+        if not moon_debt_special_applied:
             if status == 'Neecham' or is_neechabhangam:
                 if capacity is not None:
                     # Same formula for all planets, all volumes.
                     # Debt = -(120% of Capacity - Good Currency)
-                    # If Neechabhangam (original), good_val already includes the added currency.
+                    # If Neechabhangam, good_val already includes the added currency (if applicable).
                     total_debt = -((1.2 * capacity) - good_val)
                     has_debt = True
             else:
