@@ -62,6 +62,7 @@ capacity_dict = {
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
 # Good/Bad percentages
+# UPDATED: Ketu set to 0 Good, 100 Bad to ensure it holds 50 bad currency by default
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 25, 'Sun': 50, 'Jupiter': 100, 
     'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 0
@@ -241,11 +242,14 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # First pass: Calculate status and sign for all planets
     planet_status_map = {}
     planet_sign_map = {}
+    planet_house_map = {}
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]
         sign = get_sign(L)
+        house = get_house(L, lagna_sid)
         planet_cap = p.capitalize()
         planet_sign_map[planet_cap] = sign
+        planet_house_map[planet_cap] = house
         
         status = '-'
         if planet_cap in status_data:
@@ -258,7 +262,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
 
     # --- Calculate Parivardhana Yoga ---
     parivardhana_map = {}
-    parivardhana_partner_map = {} # Maps Planet -> The Partner Planet it exchanged with
     planets_for_parivardhana = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
     
     for planet_a in planets_for_parivardhana:
@@ -274,7 +277,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 house_a = get_house(lon_sid[planet_a.lower()], lagna_sid)
                 house_b = get_house(lon_sid[lord_of_sign_a.lower()], lagna_sid)
                 parivardhana_map[planet_a] = f"{lord_of_sign_a} (H{house_a}-H{house_b})"
-                parivardhana_partner_map[planet_a] = lord_of_sign_a
     
     # planets table
     rows = []
@@ -294,36 +296,23 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
         dig_bala = calculate_dig_bala(p, L, lagna_sid)
         planet_cap = p.capitalize()
-        
-        # Get Parivardhana status
-        parivardhana = parivardhana_map.get(planet_cap, '-')
-        
-        # 1. Parivardhana Change Sthana Balam Logic
-        # If Parivardhana exists, use Sthana Balam of the sign where the exchanged planet is residing
-        if planet_cap in parivardhana_partner_map:
-            partner = parivardhana_partner_map[planet_cap]
-            # Planet A acts as if it is in the house of Planet B (where Planet B is currently residing logic effectively)
-            # The prompt says: "as if if the planet is in the house where the other planet with which it is in parivardhanai is in"
-            # Planet A is in House X (Owned by B). Planet B is in House Y (Owned by A).
-            # A exchanges with B. A is treated as if it is in House Y.
-            target_sign = planet_sign_map[partner]
-            sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(target_sign)]
-        else:
-            sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
+        sthana = sthana_bala_dict.get(planet_cap, [0]*12)[sign_names.index(sign)]
         
         # Calculate Vargothuva status
         nav_sign = get_navamsa_sign(L)
         vargothuva = 'Yes' if sign == nav_sign else 'No'
         
-        # 2. Vargothuva Update: Add 20% to Sthana Balam if Vargothuva (Before Volume Calculation)
+        # --- Add 20% to Sthana Bala if Vargothuva is Yes ---
         if vargothuva == 'Yes':
-            sthana += 20
-
+            sthana = sthana + 20  # Add 20% to Sthana Bala
+        
+        # Get Parivardhana status
+        parivardhana = parivardhana_map.get(planet_cap, '-')
+        
         # Get status from pre-calculated map
         status = planet_status_map[planet_cap]
             
         capacity = capacity_dict.get(planet_cap, None)
-        # Volume Calculation using Updated Sthana
         volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
         
         # --- Step 2: Assign Good/Bad Percentages based on Phase ---
@@ -347,29 +336,17 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         has_debt = False
         updated_status = '-'
         is_neechabhangam = False
-        moon_debt_special_applied = False
-
-        # 3. Moon Debt Correction Logic (Before Neechabhangam)
-        if planet_cap == 'Moon' and status == 'Neecham':
-            # if moon has no bad currency
-            if bad_val == 0:
-                # switch debt to -[20% of the good currency it holds]
-                total_debt = -(0.20 * good_val)
-                has_debt = True
-                moon_debt_special_applied = True
-                # "Skip the other debt correction logic which recalculates with 120% for this type of moon"
         
-        # --- Check for Neechabhangam & Update Currency ---
+        # --- Check for Neechabhangam FIRST & Update Currency ---
         if status == 'Neecham':
             house_lord = get_sign_lord(sign)
             house_lord_status = planet_status_map.get(house_lord, '-')
             
-            # Condition 1: Lord is Uchcham or Moolathirigonam
             if house_lord_status in ['Uchcham', 'Moolathirigonam']:
                 updated_status = 'Neechabhangam'
                 is_neechabhangam = True
                 
-                # Add 40% of Capacity (Existing Logic)
+                # Add 40% of Capacity
                 nb_base_vol = capacity * 0.40
                 
                 # Split based on efficiency (good_pct/bad_pct)
@@ -379,35 +356,37 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 # Add to currency values
                 good_val += neechabhangam_good_add
                 bad_val += neechabhangam_bad_add
-            
-            # 4. Fallback Strategy: If neecham planet shares house with Uchcham or Moola thirigonam planet
-            elif not is_neechabhangam:
-                # Check other planets in the same sign
-                for other_p, other_s in planet_sign_map.items():
-                    if other_s == sign and other_p != planet_cap:
-                        other_status = planet_status_map.get(other_p, '-')
-                        if other_status in ['Uchcham', 'Moolathirigonam']:
-                            updated_status = 'Neechabhangam'
-                            is_neechabhangam = True
-                            # "Dont add currency for this case" - Logic satisfied by not adding code here
-                            break
+            else:
+                # --- Fallback Neechabhangam Check ---
+                # Check if neecham planet shares house with an uchcham or moolathirigonam planet
+                current_house = planet_house_map[planet_cap]
+                
+                # Find all planets in the same house
+                for other_planet in ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn', 'Rahu', 'Ketu']:
+                    if other_planet != planet_cap:
+                        other_house = planet_house_map.get(other_planet, -1)
+                        if other_house == current_house:
+                            other_status = planet_status_map.get(other_planet, '-')
+                            if other_status in ['Uchcham', 'Moolathirigonam']:
+                                updated_status = 'Neechabhangam'
+                                is_neechabhangam = True
+                                # Don't add currency for this fallback case
+                                break
         
         # --- Calculate Debt using Universal Formula for Neecham/Neechabhangam ---
-        # Only apply standard debt logic if the special Moon logic wasn't applied
-        if not moon_debt_special_applied:
-            if status == 'Neecham' or is_neechabhangam:
-                if capacity is not None:
-                    # Same formula for all planets, all volumes.
-                    # Debt = -(120% of Capacity - Good Currency)
-                    # If Neechabhangam, good_val already includes the added currency (if applicable).
-                    total_debt = -((1.2 * capacity) - good_val)
-                    has_debt = True
-            else:
-                # Not Neecham or Neechabhangam - default debt is negative of total bad currency
-                # Applies to Ketu as well (if not Neecham) since bad_val will be high
-                if bad_val > 0:
-                    total_debt = -bad_val
-                    has_debt = True
+        if status == 'Neecham' or is_neechabhangam:
+            if capacity is not None:
+                # Same formula for all planets, all volumes.
+                # Debt = -(120% of Capacity - Good Currency)
+                # If Neechabhangam, good_val already includes the added currency.
+                total_debt = -((1.2 * capacity) - good_val)
+                has_debt = True
+        else:
+            # Not Neecham or Neechabhangam - default debt is negative of total bad currency
+            # Applies to Ketu as well (if not Neecham) since bad_val will be high
+            if bad_val > 0:
+                total_debt = -bad_val
+                has_debt = True
 
         # Format debt string
         if has_debt:
@@ -554,7 +533,7 @@ def plot_south_indian_style(ax, house_to_planets, lagna_sign, title):
     ax.axis('off')
 
 # ---- Streamlit UI ----
-st.set_page_config(page_title="Sivapathy Horoscope", layout="wide")
+st.set_page_config(page_title="Buvi Horoscope", layout="wide")
 st.markdown("""
 <style>
     .stApp { background-color: white; color: #125336; }
@@ -571,7 +550,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Sivapathy Astrology Data Generator")
+st.title("Buvi Astrology Data Generator")
 
 if 'chart_data' not in st.session_state: st.session_state.chart_data = None
 if 'search_results' not in st.session_state: st.session_state.search_results = []
@@ -742,4 +721,4 @@ if st.session_state.chart_data:
 else: st.info("Enter birth details above and click 'Generate Chart' to begin")
 
 st.markdown("---")
-st.caption("Sivapathy Astrology Data Generator")
+st.caption("Buvi Astrology Data Generator")
