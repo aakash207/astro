@@ -336,9 +336,24 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         has_debt = False
         updated_status = '-'
         is_neechabhangam = False
+        is_healthy_neecham_moon = False  # Flag for special Moon case
         
-        # --- Check for Neechabhangam FIRST & Update Currency ---
+        # --- Check for Neecham status and handle accordingly ---
         if status == 'Neecham':
+            
+            # --- FIRST: Check for Healthy Neecham Moon ---
+            # Condition: Moon + Neecham + Shukla Paksha + zero bad currency
+            if planet_cap == 'Moon' and paksha == 'Shukla' and bad_val == 0:
+                is_healthy_neecham_moon = True
+                # Special debt formula: -20% of Good Capacity (not volume)
+                # Good Capacity = capacity * good_pct / 100
+                good_capacity = capacity * good_pct / 100.0
+                total_debt = -(0.20 * good_capacity)
+                has_debt = True
+                # Note: We still check for Neechabhangam below for status update,
+                # but the debt calculation is already done
+            
+            # --- THEN: Check for Neechabhangam (for status update) ---
             house_lord = get_sign_lord(sign)
             house_lord_status = planet_status_map.get(house_lord, '-')
             
@@ -346,16 +361,18 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 updated_status = 'Neechabhangam'
                 is_neechabhangam = True
                 
-                # Add 40% of Capacity
-                nb_base_vol = capacity * 0.40
-                
-                # Split based on efficiency (good_pct/bad_pct)
-                neechabhangam_good_add = nb_base_vol * (good_pct / 100.0)
-                neechabhangam_bad_add = nb_base_vol * (bad_pct / 100.0)
-                
-                # Add to currency values
-                good_val += neechabhangam_good_add
-                bad_val += neechabhangam_bad_add
+                # Only add currency if NOT healthy neecham moon
+                if not is_healthy_neecham_moon:
+                    # Add 40% of Capacity
+                    nb_base_vol = capacity * 0.40
+                    
+                    # Split based on efficiency (good_pct/bad_pct)
+                    neechabhangam_good_add = nb_base_vol * (good_pct / 100.0)
+                    neechabhangam_bad_add = nb_base_vol * (bad_pct / 100.0)
+                    
+                    # Add to currency values
+                    good_val += neechabhangam_good_add
+                    bad_val += neechabhangam_bad_add
             else:
                 # --- Fallback Neechabhangam Check ---
                 # Check if neecham planet shares house with an uchcham or moolathirigonam planet
@@ -372,15 +389,15 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                                 is_neechabhangam = True
                                 # Don't add currency for this fallback case
                                 break
-        
-        # --- Calculate Debt using Universal Formula for Neecham/Neechabhangam ---
-        if status == 'Neecham' or is_neechabhangam:
-            if capacity is not None:
-                # Same formula for all planets, all volumes.
-                # Debt = -(120% of Capacity - Good Currency)
-                # If Neechabhangam, good_val already includes the added currency.
-                total_debt = -((1.2 * capacity) - good_val)
-                has_debt = True
+            
+            # --- Calculate Debt for NON-healthy neecham moon cases ---
+            if not is_healthy_neecham_moon:
+                if capacity is not None:
+                    # Same formula for all planets, all volumes.
+                    # Debt = -(120% of Capacity - Good Currency)
+                    # If Neechabhangam, good_val already includes the added currency.
+                    total_debt = -((1.2 * capacity) - good_val)
+                    has_debt = True
         else:
             # Not Neecham or Neechabhangam - default debt is negative of total bad currency
             # Applies to Ketu as well (if not Neecham) since bad_val will be high
