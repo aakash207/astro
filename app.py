@@ -336,9 +336,19 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         has_debt = False
         updated_status = '-'
         is_neechabhangam = False
+        is_healthy_neecham_moon = False  # Flag for special Moon case
         
-        # --- Check for Neechabhangam FIRST & Update Currency ---
+        # --- Check for Neecham status and handle accordingly ---
         if status == 'Neecham':
+            
+            # --- FIRST: Identify Healthy Neecham Moon ---
+            # Condition: Moon + Shukla Paksha + zero bad currency
+            if planet_cap == 'Moon' and paksha == 'Shukla' and bad_val == 0:
+                is_healthy_neecham_moon = True
+                # Note: We do NOT calculate debt here yet. We wait to see if Neechabhangam applies
+                # so that currency can be added to good_val if applicable.
+            
+            # --- THEN: Check for Neechabhangam (for status update & currency addition) ---
             house_lord = get_sign_lord(sign)
             house_lord_status = planet_status_map.get(house_lord, '-')
             
@@ -346,6 +356,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 updated_status = 'Neechabhangam'
                 is_neechabhangam = True
                 
+                # Add Currency for Neechabhangam
+                # (Logic applies to ALL planets including Healthy Moon, as per request)
                 # Add 40% of Capacity
                 nb_base_vol = capacity * 0.40
                 
@@ -372,24 +384,25 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                                 is_neechabhangam = True
                                 # Don't add currency for this fallback case
                                 break
-        
-        # --- Calculate Debt using Universal Formula for Neecham/Neechabhangam ---
-        if status == 'Neecham' or is_neechabhangam:
-            if capacity is not None:
-                # --- Special Case: Healthy Neecham Moon ---
-                # Condition: Moon + Neecham + Shukla Paksha + bad_val == 0
-                if planet_cap == 'Moon' and paksha == 'Shukla' and bad_val == 0:
-                    # Use good capacity instead of full capacity for debt calculation
-                    # goodcapacity = Capacity * (good_pct / 100)
+            
+            # --- Calculate Debt for Neecham Planets ---
+            
+            if is_healthy_neecham_moon:
+                # --- NEW LOGIC: Healthy Neecham Moon Debt Formula ---
+                # Formula: ((1.2 * good_capacity) - good_val)
+                # Note: good_val might include Neechabhangam currency if applicable.
+                
+                if capacity is not None:
                     good_capacity = capacity * (good_pct / 100.0)
                     total_debt = -((1.2 * good_capacity) - good_val)
                     has_debt = True
-                else:
-                    # Standard formula for all other planets and Moon phases
-                    # Debt = -(120% of Capacity - Good Currency)
-                    # If Neechabhangam, good_val already includes the added currency.
+            else:
+                # --- STANDARD LOGIC: All other Neecham planets ---
+                # Formula: ((1.2 * capacity) - good_val)
+                if capacity is not None:
                     total_debt = -((1.2 * capacity) - good_val)
                     has_debt = True
+                    
         else:
             # Not Neecham or Neechabhangam - default debt is negative of total bad currency
             # Applies to Ketu as well (if not Neecham) since bad_val will be high
