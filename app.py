@@ -62,7 +62,6 @@ capacity_dict = {
     'Venus': 50, 'Mercury': 30, 'Moon': 100, 'Rahu': 100, 'Ketu': 50
 }
 # Good/Bad percentages
-# UPDATED: Ketu set to 0 Good, 100 Bad to ensure it holds 50 bad currency by default
 good_capacity_dict = {
     'Saturn': 0, 'Mars': 25, 'Sun': 50, 'Jupiter': 100, 
     'Venus': 100, 'Mercury': 100, 'Rahu': 0, 'Ketu': 0
@@ -213,8 +212,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     moon_lon = lon_sid['moon']
     diff = (moon_lon - sun_lon) % 360
     
-    # Waxing (Shukla): 0 -> 180 (Towards Full Moon)
-    # Waning (Krishna): 180 -> 360 (Towards New Moon)
     if diff < 180:
         paksha = 'Shukla'
     else:
@@ -265,20 +262,18 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     planets_for_parivardhana = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
     
     for planet_a in planets_for_parivardhana:
-        sign_a = planet_sign_map[planet_a]  # Sign where planet A is placed
-        lord_of_sign_a = get_sign_lord(sign_a)  # Lord of that sign
+        sign_a = planet_sign_map[planet_a]
+        lord_of_sign_a = get_sign_lord(sign_a)
         
-        # Check if lord_of_sign_a is in a sign whose lord is planet_a
         if lord_of_sign_a in planet_sign_map:
-            sign_of_lord = planet_sign_map[lord_of_sign_a]  # Sign where the lord is placed
-            lord_of_that_sign = get_sign_lord(sign_of_lord)  # Lord of that sign
+            sign_of_lord = planet_sign_map[lord_of_sign_a]
+            lord_of_that_sign = get_sign_lord(sign_of_lord)
             
             if lord_of_that_sign == planet_a and planet_a != lord_of_sign_a:
                 house_a = get_house(lon_sid[planet_a.lower()], lagna_sid)
                 house_b = get_house(lon_sid[lord_of_sign_a.lower()], lagna_sid)
                 parivardhana_map[planet_a] = f"{lord_of_sign_a} (H{house_a}-H{house_b})"
     
-    # planets table
     rows = []
     planet_data = {}
     asc_deg = lagna_sid % 360; asc_sign = get_sign(asc_deg)
@@ -304,22 +299,18 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         
         # --- Add 20% to Sthana Bala if Vargothuva is Yes ---
         if vargothuva == 'Yes':
-            sthana = sthana + 20  # Add 20% to Sthana Bala
+            sthana = sthana + 20
         
-        # Get Parivardhana status
         parivardhana = parivardhana_map.get(planet_cap, '-')
-        
-        # Get status from pre-calculated map
         status = planet_status_map[planet_cap]
             
         capacity = capacity_dict.get(planet_cap, None)
         volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
         
-        # --- Step 2: Assign Good/Bad Percentages based on Phase ---
         if planet_cap == 'Moon':
             if paksha == 'Shukla':
                 good_pct = shukla_good[tithi_idx]
-                bad_pct = shukla_bad[tithi_idx] # Always 0 for Shukla
+                bad_pct = shukla_bad[tithi_idx]
             else:
                 good_pct = krishna_good[tithi_idx]
                 bad_pct = krishna_bad[tithi_idx]
@@ -327,31 +318,23 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             good_pct = good_capacity_dict.get(planet_cap, 0)
             bad_pct = bad_capacity_dict.get(planet_cap, 0)
 
-        # Calculate Values
         good_val = volume * (good_pct / 100.0)
         bad_val = volume * (bad_pct / 100.0)
         
-        # --- Calculate Debt ---
         total_debt = 0.0
         has_debt = False
         updated_status = '-'
         is_neechabhangam = False
-        is_healthy_neecham_moon = False  # Flag for special Moon case
+        is_healthy_neecham_moon = False
         
-        # --- Check for Neecham status and handle accordingly ---
         if status == 'Neecham':
-            
             # --- FIRST: Check for Healthy Neecham Moon ---
-            # Condition: Moon + Neecham + Shukla Paksha + zero bad currency
             if planet_cap == 'Moon' and paksha == 'Shukla' and bad_val == 0:
                 is_healthy_neecham_moon = True
-                # Special debt formula: -20% of Good Capacity (not volume)
-                # Good Capacity = capacity * good_pct / 100
-                good_capacity = capacity * good_pct / 100.0
-                total_debt = -(0.20 * good_capacity)
+                # Formula: -((1.2 * GOOD capacity) - good_val)
+                good_capacity = capacity * (good_pct / 100.0)
+                total_debt = -((1.2 * good_capacity) - good_val)
                 has_debt = True
-                # Note: We still check for Neechabhangam below for status update,
-                # but the debt calculation is already done
             
             # --- THEN: Check for Neechabhangam (for status update) ---
             house_lord = get_sign_lord(sign)
@@ -361,24 +344,14 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 updated_status = 'Neechabhangam'
                 is_neechabhangam = True
                 
-                # Only add currency if NOT healthy neecham moon
                 if not is_healthy_neecham_moon:
-                    # Add 40% of Capacity
                     nb_base_vol = capacity * 0.40
-                    
-                    # Split based on efficiency (good_pct/bad_pct)
                     neechabhangam_good_add = nb_base_vol * (good_pct / 100.0)
                     neechabhangam_bad_add = nb_base_vol * (bad_pct / 100.0)
-                    
-                    # Add to currency values
                     good_val += neechabhangam_good_add
                     bad_val += neechabhangam_bad_add
             else:
-                # --- Fallback Neechabhangam Check ---
-                # Check if neecham planet shares house with an uchcham or moolathirigonam planet
                 current_house = planet_house_map[planet_cap]
-                
-                # Find all planets in the same house
                 for other_planet in ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn', 'Rahu', 'Ketu']:
                     if other_planet != planet_cap:
                         other_house = planet_house_map.get(other_planet, -1)
@@ -387,36 +360,24 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                             if other_status in ['Uchcham', 'Moolathirigonam']:
                                 updated_status = 'Neechabhangam'
                                 is_neechabhangam = True
-                                # Don't add currency for this fallback case
                                 break
             
-            # --- Calculate Debt for NON-healthy neecham moon cases ---
+            # --- Calculate Debt for standard neecham cases ---
             if not is_healthy_neecham_moon:
                 if capacity is not None:
-                    # Same formula for all planets, all volumes.
-                    # Debt = -(120% of Capacity - Good Currency)
-                    # If Neechabhangam, good_val already includes the added currency.
                     total_debt = -((1.2 * capacity) - good_val)
                     has_debt = True
         else:
-            # Not Neecham or Neechabhangam - default debt is negative of total bad currency
-            # Applies to Ketu as well (if not Neecham) since bad_val will be high
             if bad_val > 0:
                 total_debt = -bad_val
                 has_debt = True
 
-        # Format debt string
-        if has_debt:
-            debt_str = f"{total_debt:.2f}"
-        else:
-            debt_str = '-'
+        debt_str = f"{total_debt:.2f}" if has_debt else '-'
         
-        # --- Format Currency String ---
         currency_parts = []
         if planet_cap in single_currency_planets:
             total_val = good_val + bad_val
             if total_val > 0:
-                # Saturn, Rahu, Ketu use "Bad X" prefix
                 if planet_cap in bad_currency_planets:
                     currency_parts.append(f"Bad {planet_cap}[{total_val:.2f}]")
                 else:
@@ -437,7 +398,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             'parivardhana': parivardhana
         }
 
-    # Build rows with all columns
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         data = planet_data[p]
         rows.append([
@@ -458,12 +418,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                                              'Dig Bala (%)','Sthana Bala (%)','Status','Updated Status',
                                              'Volume', 'Default Currencies', 'Debt'])
 
-    # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
                              ', '.join(sorted(house_planets_rasi[h])) if house_planets_rasi[h] else 'Empty'] 
                             for h in range(1,13)], columns=['House','Sign','Planets'])
 
-    # navamsa
     nav_lagna = (lagna_sid*9) % 360
     house_planets_nav = defaultdict(list)
     for p,L in lon_sid.items():
@@ -475,7 +433,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                             ', '.join(sorted(house_planets_nav[h])) if house_planets_nav[h] else 'Empty'] 
                            for h in range(1,13)], columns=['House','Sign','Planets'])
 
-    # aspects table
     lagna_sign = get_sign(lagna_sid)
     aspects_dict = {'Sun':[7],'Moon':[7],'Mars':[4,7,8],'Mercury':[7],'Jupiter':[5,7,9],'Venus':[7],'Saturn':[3,7,10]}
     planet_to_house = {p.capitalize(): get_house(lon_sid[p], lagna_sid) for p in lon_sid}
@@ -494,7 +451,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                              ', '.join(asp) if asp else 'None', lord, f"House {lord_house}"])
     df_house_status = pd.DataFrame(house_status, columns=['House','Planets','Aspects from','Lord','Lord in'])
 
-    # dasa tree
     moon_lon = lon_sid['moon']
     idx, bal = generate_vimshottari_dasa(moon_lon)
     full_first = years[idx]; passed = full_first - bal
@@ -516,7 +472,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         'house_to_planets_rasi': house_planets_rasi, 'house_to_planets_nav': house_planets_nav
     }
 
-# ---- South Indian plotter ----
 def plot_south_indian_style(ax, house_to_planets, lagna_sign, title):
     sign_positions = {'Pisces':(0,3),'Aries':(1,3),'Taurus':(2,3),'Gemini':(3,3),
                       'Cancer':(3,2),'Leo':(3,1),'Virgo':(3,0),
@@ -605,9 +560,6 @@ def collect_periods_at_depth(periods, target_depth, cur_depth=1, acc=None):
             collect_periods_at_depth(subs, target_depth, cur_depth+1, acc)
     return acc
 
-# =========================
-# Birth Details
-# =========================
 st.subheader("Birth Details")
 name = st.text_input("Name", placeholder="Enter full name")
 c1, c2, c3 = st.columns(3)
@@ -657,13 +609,6 @@ if st.button("Generate Chart", use_container_width=True):
             st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
-def show_png(fig):
-    fig.tight_layout(pad=0.10)
-    st.pyplot(fig, use_container_width=False, dpi=300)
-
-# =========================
-# Outputs
-# =========================
 if st.session_state.chart_data:
     cd = st.session_state.chart_data
     st.markdown("---")
@@ -697,7 +642,6 @@ if st.session_state.chart_data:
     dasa_rows = [{'Planet': lord, 'Start': s.strftime('%Y-%m-%d'), 'End': e.strftime('%Y-%m-%d'), 'Duration': duration_str(e-s,'dasa')} for lord, s, e, _ in cd['dasa_periods_filtered']]
     st.dataframe(pd.DataFrame(dasa_rows), hide_index=True, use_container_width=True)
 
-    # Dasa Drill-down
     dp = cd['dasa_periods_filtered']
     if cd['max_depth'] >= 2:
         with st.expander("View Sub-periods", expanded=False):
@@ -706,7 +650,6 @@ if st.session_state.chart_data:
             bhuktis = dp[d_opt.index(sel)][3]
             st.dataframe(pd.DataFrame([{'Planet': l, 'Start': s.strftime('%Y-%m-%d'), 'End': e.strftime('%Y-%m-%d'), 'Duration': duration_str(e-s,'bhukti')} for l,s,e,_ in bhuktis]), hide_index=True, use_container_width=True)
 
-    # Current Micro-Periods
     st.subheader("Current City → Live Micro-Periods")
     current_city_query = st.text_input("Enter your CURRENT city", placeholder="e.g., Chennai", key="current_city_input")
     depth_choice = st.selectbox("Depth to inspect", ["Sukshma", "Prana", "Sub-Prana"])
