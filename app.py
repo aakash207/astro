@@ -578,6 +578,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 key = f"Bad {planet_cap}"
                 nav_inventory[key] = nav_bad_val
         
+        # Store original inventory keys for tracking gained currencies
+        original_keys = set(nav_inventory.keys())
+        
         navamsa_data[planet_cap] = {
             'nav_house': nav_house,
             'nav_volume': nav_volume,
@@ -587,7 +590,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             'nav_current_debt': nav_debt,
             'nav_inventory': nav_inventory,
             'nav_moon_good_pct': nav_moon_good_pct,
-            'nav_moon_bad_pct': nav_moon_bad_pct
+            'nav_moon_bad_pct': nav_moon_bad_pct,
+            'nav_original_keys': original_keys,
+            'nav_gained_currencies': defaultdict(float),
+            'nav_debt': 0.0  # Default debt is zero, will be updated based on gained currencies
         }
     
     # Navamsa Debtor Rank (same logic as Phase 1)
@@ -705,12 +711,19 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                     navamsa_data[tgt['planet']]['nav_current_debt'] -= take
                     navamsa_data[debtor]['nav_inventory'][tgt['key']] += take
                     
+                    # Track gained currencies separately
+                    navamsa_data[debtor]['nav_gained_currencies'][tgt['key']] += take
+                    
                     is_bad_currency = 'Bad' in tgt['key'] or tgt['key'] in ['Amavasya', 'Bad Saturn', 'Bad Rahu']
                     if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency = True
                     if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency = True
                     
-                    if is_bad_currency: navamsa_data[debtor]['nav_current_debt'] -= take 
-                    else: navamsa_data[debtor]['nav_current_debt'] += take 
+                    if is_bad_currency: 
+                        navamsa_data[debtor]['nav_current_debt'] -= take
+                        navamsa_data[debtor]['nav_debt'] -= take  # Add to debt for bad currency gained
+                    else: 
+                        navamsa_data[debtor]['nav_current_debt'] += take
+                        navamsa_data[debtor]['nav_debt'] += take  # Reduce debt for good currency gained
                     
                     navamsa_data[debtor][tracker_key] = pulled + take
                     nav_something_happened = True
@@ -719,15 +732,19 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     
     # Format Navamsa Exchange Output
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        inv = navamsa_data[p]['nav_inventory']
-        parts = []
-        own_keys = [p, f"Good {p}", f"Bad {p}"]
-        if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
-        for k in own_keys:
-            if k in inv and inv[k] > 0.001: parts.append(f"{k}[{inv[k]:.2f}]")
-        for k, v in inv.items():
-            if k not in own_keys and v > 0.001: parts.append(f"{k}[{v:.2f}]")
-        navamsa_data[p]['nav_currency_after'] = ", ".join(parts)
+        # Format gained currencies
+        gained = navamsa_data[p]['nav_gained_currencies']
+        gained_parts = []
+        for k, v in gained.items():
+            if v > 0.001: gained_parts.append(f"{k}[{v:.2f}]")
+        navamsa_data[p]['nav_gained_str'] = ", ".join(gained_parts) if gained_parts else "-"
+        
+        # Format debt
+        debt_val = navamsa_data[p]['nav_debt']
+        if abs(debt_val) < 0.01:
+            navamsa_data[p]['nav_debt_str'] = "0.00"
+        else:
+            navamsa_data[p]['nav_debt_str'] = f"{debt_val:.2f}"
     
     # Create Navamsa Exchange DataFrame
     navamsa_rows = []
@@ -737,10 +754,11 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             p, 
             f"{nd['nav_volume']:.2f}", 
             nd['nav_default_currency'], 
-            nd['nav_currency_after']
+            nd['nav_gained_str'],
+            nd['nav_debt_str']
         ])
     
-    df_navamsa_exchange = pd.DataFrame(navamsa_rows, columns=['Planet', 'Volume', 'Default Currency', 'Currency [After Conjunction]'])
+    df_navamsa_exchange = pd.DataFrame(navamsa_rows, columns=['Planet', 'Volume', 'Default Currency', 'Gained Currencies', 'Debt'])
     
     # ============================================================
     # END OF NAVAMSA EXCHANGE LOGIC
