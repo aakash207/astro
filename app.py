@@ -496,6 +496,257 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         ])
     
     # ============================================================
+    # NAVAMSA EXCHANGE LOGIC
+    # ============================================================
+    
+    # Calculate Navamsa positions and houses for all planets
+    nav_lagna = (lagna_sid * 9) % 360
+    navamsa_data = {}
+    navamsa_house_planets = defaultdict(list)  # house -> list of planet names
+    
+    for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
+        L = lon_sid[p]
+        nav_lon = (L * 9) % 360
+        nav_house = (int(nav_lon/30) - int(nav_lagna/30)) % 12 + 1
+        planet_cap = p.capitalize()
+        navamsa_house_planets[nav_house].append(planet_cap)
+        
+        # For Navamsa, volume = 100% of capacity (not sthana bala based)
+        capacity = capacity_dict.get(planet_cap, 0)
+        nav_volume = float(capacity)  # 100% volume
+        
+        # Get good/bad percentages (same as before)
+        if planet_cap == 'Moon':
+            if paksha == 'Shukla':
+                good_pct = shukla_good[tithi_idx]
+                bad_pct = shukla_bad[tithi_idx]
+            else:
+                good_pct = krishna_good[tithi_idx]
+                bad_pct = krishna_bad[tithi_idx]
+            nav_moon_good_pct = good_pct
+            nav_moon_bad_pct = bad_pct
+        else:
+            good_pct = good_capacity_dict.get(planet_cap, 0)
+            bad_pct = bad_capacity_dict.get(planet_cap, 0)
+            nav_moon_good_pct = 0
+            nav_moon_bad_pct = 0
+        
+        # Calculate good/bad values
+        nav_good_val = nav_volume * (good_pct / 100.0)
+        nav_bad_val = nav_volume * (bad_pct / 100.0)
+        
+        # Format default currency string for Navamsa
+        nav_currency_parts = []
+        if planet_cap in single_currency_planets:
+            total_val = nav_good_val + nav_bad_val
+            if total_val > 0:
+                if planet_cap in bad_currency_planets:
+                    nav_currency_parts.append(f"Bad {planet_cap}[{total_val:.2f}]")
+                else:
+                    nav_currency_parts.append(f"{planet_cap}[{total_val:.2f}]")
+        else:
+            if nav_good_val > 0:
+                nav_currency_parts.append(f"Good {planet_cap}[{nav_good_val:.2f}]")
+            if nav_bad_val > 0:
+                nav_currency_parts.append(f"Bad {planet_cap}[{nav_bad_val:.2f}]")
+        
+        nav_default_currency_str = ", ".join(nav_currency_parts)
+        
+        # Calculate initial debt for Navamsa (same logic as Phase 1)
+        nav_debt = 0.0
+        if planet_cap in base_malefics:
+            nav_debt = -nav_bad_val
+        if planet_cap == 'Moon' and paksha == 'Krishna':
+            nav_debt = -nav_bad_val
+        if planet_cap == 'Ketu':
+            nav_debt = -nav_bad_val - 50.0
+        
+        # Initialize Navamsa inventory
+        nav_inventory = defaultdict(float)
+        if planet_cap in ['Jupiter', 'Venus', 'Mercury']:
+            if nav_good_val > 0: nav_inventory[planet_cap] = nav_good_val
+        elif planet_cap in ['Saturn', 'Rahu']:
+            if nav_bad_val > 0: nav_inventory[f"Bad {planet_cap}"] = nav_bad_val
+        elif planet_cap == 'Ketu':
+            if nav_good_val > 0: nav_inventory[f"Good {planet_cap}"] = nav_good_val
+            if nav_bad_val > 0: nav_inventory[f"Bad {planet_cap}"] = nav_bad_val
+        else:
+            if nav_good_val > 0:
+                key = f"Good {planet_cap}"
+                nav_inventory[key] = nav_good_val
+            if nav_bad_val > 0:
+                key = f"Bad {planet_cap}"
+                nav_inventory[key] = nav_bad_val
+        
+        navamsa_data[planet_cap] = {
+            'nav_house': nav_house,
+            'nav_volume': nav_volume,
+            'nav_default_currency': nav_default_currency_str,
+            'nav_good_val': nav_good_val,
+            'nav_bad_val': nav_bad_val,
+            'nav_current_debt': nav_debt,
+            'nav_inventory': nav_inventory,
+            'nav_moon_good_pct': nav_moon_good_pct,
+            'nav_moon_bad_pct': nav_moon_bad_pct
+        }
+    
+    # Navamsa Debtor Rank (same logic as Phase 1)
+    nav_debtor_rank = []
+    nav_debtor_rank.append('Rahu')
+    nav_debtor_rank.append('Sun')
+    nav_debtor_rank.append('Saturn')
+    
+    nav_moon_p = navamsa_data['Moon']
+    nav_is_waning = (paksha == 'Krishna')
+    nav_bad_pct_moon = nav_moon_p['nav_moon_bad_pct']
+    
+    nav_moon_in_list = False
+    
+    if nav_is_waning and moon_phase_name == 'Amavasya':
+        nav_debtor_rank.append('Moon')
+        nav_moon_in_list = True
+        
+    nav_debtor_rank.append('Mars')
+    
+    if nav_is_waning and not nav_moon_in_list:
+        if nav_bad_pct_moon > 25:
+            nav_debtor_rank.append('Moon')
+        else:
+            nav_debtor_rank.append('Moon')
+            
+    nav_debtor_rank.append('Ketu')
+    
+    # Navamsa Currency Rank Score function (same as Phase 1)
+    def get_nav_currency_rank_score(p_name, c_key):
+        if p_name == 'Moon':
+            phase = moon_phase_name
+            is_shukla = (paksha == 'Shukla')
+            idx = tithi_idx
+            if phase == 'Purnima': return 1000
+            if 'Good' in c_key or 'Moon' == c_key: 
+                if is_shukla:
+                    pct = shukla_good[idx]
+                    return 500 + pct * 4 
+                else:
+                    pct = krishna_good[idx]
+                    return 500 + pct * 4
+        
+        if c_key == 'Jupiter': return 990
+        if c_key == 'Venus': return 980
+        if c_key == 'Mercury': return 970
+        if c_key == 'Good Mars': return 800 
+        if c_key == 'Good Sun': return 700 
+        if c_key == 'Good Ketu': return 700
+        if p_name == 'Moon' and 'Bad' in c_key:
+            pct = navamsa_data['Moon']['nav_moon_bad_pct']
+            return 400 - (pct * 3)
+        if c_key == 'Bad Mars': return 325 
+        if c_key == 'Bad Sun': return 250 
+        if c_key == 'Bad Saturn': return 100 
+        if c_key == 'Bad Rahu': return 100
+        return 0
+    
+    # Navamsa Exchange Cycle - Only planets in SAME house can exchange
+    nav_loop_active = True
+    nav_cycle_limit = 200
+    nav_cycles = 0
+    
+    while nav_loop_active and nav_cycles < nav_cycle_limit:
+        nav_cycles += 1
+        nav_something_happened = False
+        
+        for debtor in nav_debtor_rank:
+            if navamsa_data[debtor]['nav_current_debt'] >= -0.001: continue
+            
+            debtor_house = navamsa_data[debtor]['nav_house']
+            
+            # Get planets in same Navamsa house
+            same_house_planets = navamsa_house_planets[debtor_house]
+            
+            potential_targets = []
+            for t_name in same_house_planets:
+                if t_name == debtor: continue
+                d_idx = nav_debtor_rank.index(debtor) if debtor in nav_debtor_rank else 99
+                t_idx = nav_debtor_rank.index(t_name) if t_name in nav_debtor_rank else 99
+                if d_idx > t_idx: continue 
+                if debtor == 'Ketu' and t_name not in ['Sun', 'Moon']: continue
+                
+                inv = navamsa_data[t_name]['nav_inventory']
+                for key, val in inv.items():
+                    if val > 0.001:
+                        # For Navamsa, same house = 100% pull capacity (gap = 0)
+                        max_pull = navamsa_data[t_name]['nav_volume'] * 1.0  # 100% since same house
+                        tracker_key = f"nav_pulled_from_{t_name}"
+                        pulled = navamsa_data[debtor].get(tracker_key, 0.0)
+                        
+                        if pulled < max_pull:
+                            score = get_nav_currency_rank_score(t_name, key)
+                            potential_targets.append({
+                                'planet': t_name, 'key': key, 'score': score, 'max_pull': max_pull
+                            })
+
+            potential_targets.sort(key=lambda x: -x['score'])
+            
+            for tgt in potential_targets:
+                if navamsa_data[debtor]['nav_current_debt'] >= -0.001: break
+                avail = navamsa_data[tgt['planet']]['nav_inventory'][tgt['key']]
+                if avail <= 0: continue
+                
+                tracker_key = f"nav_pulled_from_{tgt['planet']}"
+                pulled = navamsa_data[debtor].get(tracker_key, 0.0)
+                cap_space = tgt['max_pull'] - pulled
+                if cap_space <= 0: continue
+                
+                needed = abs(navamsa_data[debtor]['nav_current_debt'])
+                take = min(1.0, avail, cap_space)
+                
+                if take > 0:
+                    navamsa_data[tgt['planet']]['nav_inventory'][tgt['key']] -= take
+                    navamsa_data[tgt['planet']]['nav_current_debt'] -= take
+                    navamsa_data[debtor]['nav_inventory'][tgt['key']] += take
+                    
+                    is_bad_currency = 'Bad' in tgt['key'] or tgt['key'] in ['Amavasya', 'Bad Saturn', 'Bad Rahu']
+                    if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency = True
+                    if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency = True
+                    
+                    if is_bad_currency: navamsa_data[debtor]['nav_current_debt'] -= take 
+                    else: navamsa_data[debtor]['nav_current_debt'] += take 
+                    
+                    navamsa_data[debtor][tracker_key] = pulled + take
+                    nav_something_happened = True
+
+        if not nav_something_happened: nav_loop_active = False
+    
+    # Format Navamsa Exchange Output
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        inv = navamsa_data[p]['nav_inventory']
+        parts = []
+        own_keys = [p, f"Good {p}", f"Bad {p}"]
+        if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
+        for k in own_keys:
+            if k in inv and inv[k] > 0.001: parts.append(f"{k}[{inv[k]:.2f}]")
+        for k, v in inv.items():
+            if k not in own_keys and v > 0.001: parts.append(f"{k}[{v:.2f}]")
+        navamsa_data[p]['nav_currency_after'] = ", ".join(parts)
+    
+    # Create Navamsa Exchange DataFrame
+    navamsa_rows = []
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        nd = navamsa_data[p]
+        navamsa_rows.append([
+            p, 
+            f"{nd['nav_volume']:.2f}", 
+            nd['nav_default_currency'], 
+            nd['nav_currency_after']
+        ])
+    
+    df_navamsa_exchange = pd.DataFrame(navamsa_rows, columns=['Planet', 'Volume', 'Default Currency', 'Currency [After Conjunction]'])
+    
+    # ============================================================
+    # END OF NAVAMSA EXCHANGE LOGIC
+    # ============================================================
+    
+    # ============================================================
     # PHASE 1 CURRENCY EXCHANGE LOGIC
     # ============================================================
     
@@ -664,7 +915,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                             for h in range(1,13)], columns=['House','Sign','Planets'])
 
     # navamsa
-    nav_lagna = (lagna_sid*9) % 360
     house_planets_nav = defaultdict(list)
     for p,L in lon_sid.items():
         nav_lon = (L*9) % 360
@@ -707,7 +957,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                  6:'Dasa + Bhukti + Anthara + Sukshma + Prana + Sub-Prana'}
 
     return {
-        'name': name, 'df_planets': df_planets, 'df_phase1': df_phase1, 'df_rasi': df_rasi, 'df_nav': df_nav,
+        'name': name, 'df_planets': df_planets, 'df_navamsa_exchange': df_navamsa_exchange, 
+        'df_phase1': df_phase1, 'df_rasi': df_rasi, 'df_nav': df_nav,
         'df_house_status': df_house_status, 'dasa_periods_filtered': dasa_filtered,
         'lagna_sid': lagna_sid, 'nav_lagna': nav_lagna, 'lagna_sign': lagna_sign,
         'nav_lagna_sign': get_sign(nav_lagna), 'moon_rasi': get_sign(moon_lon),
@@ -879,6 +1130,9 @@ if st.session_state.chart_data:
 
     st.subheader("Planetary Positions")
     st.dataframe(cd['df_planets'], hide_index=True, use_container_width=True)
+
+    st.subheader("Navamsa Exchange")
+    st.dataframe(cd['df_navamsa_exchange'], hide_index=True, use_container_width=True)
 
     st.subheader("Phase One Currency Exchange")
     st.dataframe(cd['df_phase1'], hide_index=True, use_container_width=True)
