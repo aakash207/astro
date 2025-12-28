@@ -475,9 +475,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 if planet_cap == 'Moon': key = "Bad Moon"
                 planet_data[planet_cap]['final_inventory'][key] = bad_val
         
-        # Special Ketu Rule: Add additional -50 flat debt
-        if planet_cap == 'Ketu':
-            planet_data[planet_cap]['current_debt'] -= 50.0
 
     # Build rows with all columns
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
