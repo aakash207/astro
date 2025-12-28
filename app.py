@@ -922,6 +922,172 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # END OF PHASE 1 LOGIC
     # ============================================================
     
+    # ============================================================
+    # PHASE 2 CURRENCY EXCHANGE LOGIC
+    # ============================================================
+    
+    # Phase 2: Redistributive cycle among Benefics only
+    # Eligible Benefics: Jupiter, Venus, Mercury, and Moon (if Shukla or Purnima)
+    
+    # Determine if Moon is eligible for Phase 2
+    moon_is_benefic_p2 = (paksha == 'Shukla') or (moon_phase_name == 'Purnima')
+    
+    # Core benefics that can participate in Phase 2
+    core_benefics_p2 = ['Jupiter', 'Venus', 'Mercury']
+    if moon_is_benefic_p2:
+        core_benefics_p2.append('Moon')
+    
+    # Malefics excluded from Phase 2
+    malefics_p2 = ['Saturn', 'Rahu', 'Ketu', 'Mars', 'Sun']
+    
+    # Initialize Phase 2 inventory from Phase 1 final inventory (deep copy)
+    phase2_data = {}
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        phase2_data[p] = {
+            'p2_inventory': defaultdict(float),
+            'p2_current_debt': planet_data[p]['current_debt'],
+            'volume': planet_data[p]['volume'],
+            'L': planet_data[p]['L']
+        }
+        # Copy Phase 1 final inventory
+        for k, v in planet_data[p]['final_inventory'].items():
+            phase2_data[p]['p2_inventory'][k] = v
+    
+    # Calculate Debt Percentage for eligible benefics
+    # Debt Percentage = (|Debt Phase 1| / Volume) × 100
+    benefic_debt_pct = {}
+    for p in core_benefics_p2:
+        volume = phase2_data[p]['volume']
+        debt_p1 = abs(phase2_data[p]['p2_current_debt'])
+        if volume > 0:
+            debt_pct = (debt_p1 / volume) * 100
+        else:
+            debt_pct = 0.0
+        benefic_debt_pct[p] = debt_pct
+    
+    # Sort benefics by debt percentage (highest first) - this is the pulling order
+    sorted_benefics = sorted(core_benefics_p2, key=lambda x: -benefic_debt_pct[x])
+    
+    # Phase 2 Currency Rank Score (Moon ranked next to Jupiter)
+    def get_p2_currency_rank_score(p_name, c_key):
+        if c_key == 'Jupiter': return 1000
+        if c_key == 'Good Moon' or (p_name == 'Moon' and 'Good' in c_key): return 995
+        if c_key == 'Venus': return 980
+        if c_key == 'Mercury': return 970
+        return 0
+    
+    # Phase 2 Exchange Cycle
+    p2_loop_active = True
+    p2_cycle_limit = 200
+    p2_cycles = 0
+    
+    while p2_loop_active and p2_cycles < p2_cycle_limit:
+        p2_cycles += 1
+        p2_something_happened = False
+        
+        for puller in sorted_benefics:
+            # Only pull if puller has debt (negative current_debt)
+            if phase2_data[puller]['p2_current_debt'] >= -0.001: continue
+            
+            puller_debt_pct = benefic_debt_pct[puller]
+            
+            potential_targets = []
+            for target in core_benefics_p2:
+                if target == puller: continue
+                
+                # Target must have LOWER debt percentage than puller
+                target_debt_pct = benefic_debt_pct[target]
+                if target_debt_pct >= puller_debt_pct: continue
+                
+                # Check angular proximity (0° to 22°)
+                L1 = phase2_data[puller]['L']
+                L2 = phase2_data[target]['L']
+                diff = abs(L1 - L2)
+                if diff > 180: diff = 360 - diff
+                gap = int(diff)
+                if gap > 22: continue
+                
+                # Get available currencies from target
+                inv = phase2_data[target]['p2_inventory']
+                for key, val in inv.items():
+                    # Only pull GOOD currencies in Phase 2
+                    if 'Bad' in key: continue
+                    if val > 0.001:
+                        cap_pct = mix_dict.get(gap, 0)
+                        max_pull = phase2_data[target]['volume'] * (cap_pct / 100.0)
+                        tracker_key = f"p2_pulled_from_{target}"
+                        pulled = phase2_data[puller].get(tracker_key, 0.0)
+                        
+                        if pulled < max_pull:
+                            score = get_p2_currency_rank_score(target, key)
+                            potential_targets.append({
+                                'planet': target, 'key': key, 'score': score, 'gap': gap, 'max_pull': max_pull
+                            })
+            
+            # Sort by currency score (highest first), then by gap (closest first)
+            potential_targets.sort(key=lambda x: (-x['score'], x['gap']))
+            
+            for tgt in potential_targets:
+                if phase2_data[puller]['p2_current_debt'] >= -0.001: break
+                avail = phase2_data[tgt['planet']]['p2_inventory'][tgt['key']]
+                if avail <= 0: continue
+                
+                tracker_key = f"p2_pulled_from_{tgt['planet']}"
+                pulled = phase2_data[puller].get(tracker_key, 0.0)
+                cap_space = tgt['max_pull'] - pulled
+                if cap_space <= 0: continue
+                
+                take = min(1.0, avail, cap_space)
+                
+                if take > 0:
+                    # Transfer currency
+                    phase2_data[tgt['planet']]['p2_inventory'][tgt['key']] -= take
+                    phase2_data[tgt['planet']]['p2_current_debt'] -= take
+                    phase2_data[puller]['p2_inventory'][tgt['key']] += take
+                    
+                    # Good currency reduces debt (adds to current_debt making it less negative)
+                    phase2_data[puller]['p2_current_debt'] += take
+                    
+                    phase2_data[puller][tracker_key] = pulled + take
+                    p2_something_happened = True
+                    
+                    # Recalculate debt percentages after each transaction
+                    for ben in core_benefics_p2:
+                        vol = phase2_data[ben]['volume']
+                        dbt = abs(phase2_data[ben]['p2_current_debt'])
+                        if vol > 0:
+                            benefic_debt_pct[ben] = (dbt / vol) * 100
+                        else:
+                            benefic_debt_pct[ben] = 0.0
+        
+        if not p2_something_happened: p2_loop_active = False
+    
+    # --- FORMAT PHASE 2 OUTPUT ---
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        inv = phase2_data[p]['p2_inventory']
+        parts = []
+        own_keys = [p, f"Good {p}", f"Bad {p}"]
+        if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
+        for k in own_keys:
+            if k in inv and inv[k] > 0.001: parts.append(f"{k}[{inv[k]:.2f}]")
+        for k, v in inv.items():
+            if k not in own_keys and v > 0.001: parts.append(f"{k}[{v:.2f}]")
+        phase2_data[p]['currency_p2'] = ", ".join(parts) if parts else "-"
+        d_val = phase2_data[p]['p2_current_debt']
+        if abs(d_val) < 0.01: phase2_data[p]['debt_p2'] = "0.00"
+        else: phase2_data[p]['debt_p2'] = f"{d_val:.2f}"
+    
+    phase2_rows = []
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        d_p2 = phase2_data[p]
+        phase2_rows.append([p, d_p2['currency_p2'], d_p2['debt_p2']])
+    
+    df_phase2 = pd.DataFrame(phase2_rows, columns=['Planet', 'Currency [Phase 2]', 'Debt [Phase 2]'])
+    
+    # ============================================================
+    # END OF PHASE 2 LOGIC
+    # ============================================================
+    
     df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Vargothuva',
                                              'Parivardhana',
                                              'Dig Bala (%)','Sthana Bala (%)','Status','Updated Status',
@@ -976,7 +1142,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
 
     return {
         'name': name, 'df_planets': df_planets, 'df_navamsa_exchange': df_navamsa_exchange, 
-        'df_phase1': df_phase1, 'df_rasi': df_rasi, 'df_nav': df_nav,
+        'df_phase1': df_phase1, 'df_phase2': df_phase2, 'df_rasi': df_rasi, 'df_nav': df_nav,
         'df_house_status': df_house_status, 'dasa_periods_filtered': dasa_filtered,
         'lagna_sid': lagna_sid, 'nav_lagna': nav_lagna, 'lagna_sign': lagna_sign,
         'nav_lagna_sign': get_sign(nav_lagna), 'moon_rasi': get_sign(moon_lon),
@@ -1154,6 +1320,9 @@ if st.session_state.chart_data:
 
     st.subheader("Phase One Currency Exchange")
     st.dataframe(cd['df_phase1'], hide_index=True, use_container_width=True)
+
+    st.subheader("Phase Two Currency Exchange")
+    st.dataframe(cd['df_phase2'], hide_index=True, use_container_width=True)
 
     st.subheader("Rasi (D1) & Navamsa (D9) — South Indian")
     col1, col2 = st.columns(2, gap="small")
