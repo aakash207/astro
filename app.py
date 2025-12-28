@@ -708,7 +708,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 
                 if take > 0:
                     navamsa_data[tgt['planet']]['nav_inventory'][tgt['key']] -= take
+                    # UPDATED: Increase debt (more negative) for currency lost
                     navamsa_data[tgt['planet']]['nav_current_debt'] -= take
+                    navamsa_data[tgt['planet']]['nav_debt'] -= take  # Track debt from losing currency
+                    
                     navamsa_data[debtor]['nav_inventory'][tgt['key']] += take
                     
                     # Track gained currencies separately
@@ -822,6 +825,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if c_key == 'Bad Sun': return 250 
         if c_key == 'Bad Saturn': return 100 
         if c_key == 'Bad Rahu': return 100
+        # Bad Ketu treated as bad by Sun/Moon, but good by others
+        if c_key == 'Bad Ketu': return 150
         return 0
 
     # 3. CYCLE LOGIC
@@ -883,13 +888,26 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 if take > 0:
                     planet_data[tgt['planet']]['final_inventory'][tgt['key']] -= take
                     planet_data[tgt['planet']]['current_debt'] -= take
-                    planet_data[debtor]['final_inventory'][tgt['key']] += take
-                    is_bad_currency = 'Bad' in tgt['key'] or tgt['key'] in ['Amavasya', 'Bad Saturn', 'Bad Rahu']
-                    if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency = True
-                    if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency = True
                     
-                    if is_bad_currency: planet_data[debtor]['current_debt'] -= take 
-                    else: planet_data[debtor]['current_debt'] += take 
+                    # Check if this is Ketu currency being consumed by non-Sun/Moon
+                    is_ketu_currency = (tgt['key'] == 'Bad Ketu' or tgt['key'] == 'Good Ketu')
+                    is_sun_or_moon = (debtor in ['Sun', 'Moon'])
+                    
+                    if is_ketu_currency and not is_sun_or_moon:
+                        # Transform Bad Ketu to Good Ketu for the gainer
+                        planet_data[debtor]['final_inventory']['Good Ketu'] += take
+                        # Debt DECREASES (becomes less negative) for the gainer
+                        planet_data[debtor]['current_debt'] += take
+                    else:
+                        # Normal currency transfer
+                        planet_data[debtor]['final_inventory'][tgt['key']] += take
+                        
+                        is_bad_currency = 'Bad' in tgt['key'] or tgt['key'] in ['Amavasya', 'Bad Saturn', 'Bad Rahu']
+                        if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency = True
+                        if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency = True
+                        
+                        if is_bad_currency: planet_data[debtor]['current_debt'] -= take 
+                        else: planet_data[debtor]['current_debt'] += take
                     
                     planet_data[debtor][tracker_key] = pulled + take
                     something_happened = True
@@ -928,6 +946,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     
     # Phase 2: Redistributive cycle among Benefics only
     # Eligible Benefics: Jupiter, Venus, Mercury, and Moon (if Shukla or Purnima)
+    # NEW: Ketu also participates after transforming Bad Ketu to Good Ketu
     
     # Determine if Moon is eligible for Phase 2
     moon_is_benefic_p2 = (paksha == 'Shukla') or (moon_phase_name == 'Purnima')
@@ -937,8 +956,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     if moon_is_benefic_p2:
         core_benefics_p2.append('Moon')
     
-    # Malefics excluded from Phase 2
-    malefics_p2 = ['Saturn', 'Rahu', 'Ketu', 'Mars', 'Sun']
+    # Malefics excluded from Phase 2 (except Ketu which transforms)
+    malefics_p2 = ['Saturn', 'Rahu', 'Mars', 'Sun']
     
     # Initialize Phase 2 inventory from Phase 1 final inventory (deep copy)
     phase2_data = {}
@@ -952,6 +971,19 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         # Copy Phase 1 final inventory
         for k, v in planet_data[p]['final_inventory'].items():
             phase2_data[p]['p2_inventory'][k] = v
+    
+    # TRANSFORM Bad Ketu to Good Ketu before Phase 2
+    # If Ketu has Bad Ketu currency remaining, transform it and reduce debt
+    bad_ketu_remaining = phase2_data['Ketu']['p2_inventory'].get('Bad Ketu', 0.0)
+    if bad_ketu_remaining > 0:
+        # Transform Bad Ketu to Good Ketu
+        phase2_data['Ketu']['p2_inventory']['Good Ketu'] = phase2_data['Ketu']['p2_inventory'].get('Good Ketu', 0.0) + bad_ketu_remaining
+        phase2_data['Ketu']['p2_inventory']['Bad Ketu'] = 0.0
+        # Reduce Ketu's debt by the amount of currency it holds
+        phase2_data['Ketu']['p2_current_debt'] += bad_ketu_remaining
+    
+    # Add Ketu to benefics for Phase 2
+    core_benefics_p2.append('Ketu')
     
     # Calculate Debt Percentage for eligible benefics
     # Debt Percentage = (|Debt Phase 1| / Volume) × 100
@@ -974,6 +1006,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if c_key == 'Good Moon' or (p_name == 'Moon' and 'Good' in c_key): return 995
         if c_key == 'Venus': return 980
         if c_key == 'Mercury': return 970
+        if c_key == 'Good Ketu': return 700
         return 0
     
     # Phase 2 Exchange Cycle
@@ -994,6 +1027,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             potential_targets = []
             for target in core_benefics_p2:
                 if target == puller: continue
+                
+                # Ketu cannot exchange with Moon
+                if puller == 'Ketu' and target == 'Moon': continue
+                if puller == 'Moon' and target == 'Ketu': continue
                 
                 # Target must have LOWER debt percentage than puller
                 target_debt_pct = benefic_debt_pct[target]
