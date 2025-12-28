@@ -302,10 +302,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         nav_sign = get_navamsa_sign(L)
         vargothuva = 'Yes' if sign == nav_sign else 'No'
         
-        # --- Add 20% to Sthana Bala if Vargothuva is Yes ---
-        if vargothuva == 'Yes':
-            sthana = sthana + 20  # Add 20% to Sthana Bala
-        
         # Get Parivardhana status
         parivardhana = parivardhana_map.get(planet_cap, '-')
         
