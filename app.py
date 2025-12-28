@@ -242,14 +242,11 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # First pass: Calculate status and sign for all planets
     planet_status_map = {}
     planet_sign_map = {}
-    planet_house_map = {}
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]
         sign = get_sign(L)
-        house = get_house(L, lagna_sid)
         planet_cap = p.capitalize()
         planet_sign_map[planet_cap] = sign
-        planet_house_map[planet_cap] = house
         
         status = '-'
         if planet_cap in status_data:
@@ -332,19 +329,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         has_debt = False
         updated_status = '-'
         is_neechabhangam = False
-        is_healthy_neecham_moon = False  # Flag for special Moon case
         
-        # --- Check for Neecham status and handle accordingly ---
+        # --- Check for Neechabhangam FIRST & Update Currency ---
         if status == 'Neecham':
-            
-            # --- FIRST: Identify Healthy Neecham Moon ---
-            # Condition: Moon + Shukla Paksha + zero bad currency
-            if planet_cap == 'Moon' and paksha == 'Shukla' and bad_val == 0:
-                is_healthy_neecham_moon = True
-                # Note: We do NOT calculate debt here yet. We wait to see if Neechabhangam applies
-                # so that currency can be added to good_val if applicable.
-            
-            # --- THEN: Check for Neechabhangam (for status update & currency addition) ---
             house_lord = get_sign_lord(sign)
             house_lord_status = planet_status_map.get(house_lord, '-')
             
@@ -352,8 +339,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 updated_status = 'Neechabhangam'
                 is_neechabhangam = True
                 
-                # Add Currency for Neechabhangam
-                # (Logic applies to ALL planets including Healthy Moon, as per request)
                 # Add 40% of Capacity
                 nb_base_vol = capacity * 0.40
                 
@@ -364,41 +349,15 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 # Add to currency values
                 good_val += neechabhangam_good_add
                 bad_val += neechabhangam_bad_add
-            else:
-                # --- Fallback Neechabhangam Check ---
-                # Check if neecham planet shares house with an uchcham or moolathirigonam planet
-                current_house = planet_house_map[planet_cap]
-                
-                # Find all planets in the same house
-                for other_planet in ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn', 'Rahu', 'Ketu']:
-                    if other_planet != planet_cap:
-                        other_house = planet_house_map.get(other_planet, -1)
-                        if other_house == current_house:
-                            other_status = planet_status_map.get(other_planet, '-')
-                            if other_status in ['Uchcham', 'Moolathirigonam']:
-                                updated_status = 'Neechabhangam'
-                                is_neechabhangam = True
-                                # Don't add currency for this fallback case
-                                break
-            
-            # --- Calculate Debt for Neecham Planets ---
-            
-            if is_healthy_neecham_moon:
-                # --- NEW LOGIC: Healthy Neecham Moon Debt Formula ---
-                # Formula: ((1.2 * good_capacity) - good_val)
-                # Note: good_val might include Neechabhangam currency if applicable.
-                
-                if capacity is not None:
-                    good_capacity = capacity * (good_pct / 100.0)
-                    total_debt = -((1.2 * good_capacity) - good_val)
-                    has_debt = True
-            else:
-                # --- STANDARD LOGIC: All other Neecham planets ---
-                # Formula: ((1.2 * capacity) - good_val)
-                if capacity is not None:
-                    total_debt = -((1.2 * capacity) - good_val)
-                    has_debt = True
-                    
+        
+        # --- Calculate Debt using Universal Formula for Neecham/Neechabhangam ---
+        if status == 'Neecham' or is_neechabhangam:
+            if capacity is not None:
+                # Same formula for all planets, all volumes.
+                # Debt = -(120% of Capacity - Good Currency)
+                # If Neechabhangam, good_val already includes the added currency.
+                total_debt = -((1.2 * capacity) - good_val)
+                has_debt = True
         else:
             # Not Neecham or Neechabhangam - default debt is negative of total bad currency
             # Applies to Ketu as well (if not Neecham) since bad_val will be high
@@ -551,7 +510,7 @@ def plot_south_indian_style(ax, house_to_planets, lagna_sign, title):
     ax.axis('off')
 
 # ---- Streamlit UI ----
-st.set_page_config(page_title="Buvi Horoscope", layout="wide")
+st.set_page_config(page_title="Sivapathy Horoscope", layout="wide")
 st.markdown("""
 <style>
     .stApp { background-color: white; color: #125336; }
@@ -568,7 +527,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Buvi Astrology Data Generator")
+st.title("Sivapathy Astrology Data Generator")
 
 if 'chart_data' not in st.session_state: st.session_state.chart_data = None
 if 'search_results' not in st.session_state: st.session_state.search_results = []
@@ -739,4 +698,4 @@ if st.session_state.chart_data:
 else: st.info("Enter birth details above and click 'Generate Chart' to begin")
 
 st.markdown("---")
-st.caption("Buvi Astrology Data Generator")
+st.caption("Sivapathy Astrology Data Generator")
