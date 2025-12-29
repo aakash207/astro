@@ -1045,6 +1045,236 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # ============================================================
     
     # ============================================================
+    # NAVAMSA PHASE 3 LOGIC - House Pot System
+    # ============================================================
+    
+    # 1. Initialization - Deep copy data from Navamsa Phase 2
+    import copy
+    navamsa_phase3_data = {}
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        navamsa_phase3_data[p] = {
+            'navp3_inventory': copy.deepcopy(dict(navamsa_phase2_data[p]['navp2_inventory'])),
+            'navp3_current_debt': navamsa_phase2_data[p]['navp2_current_debt'],
+            'nav_volume': navamsa_data[p]['nav_volume'],
+            'nav_house': navamsa_data[p]['nav_house'],
+        }
+    
+    # 2. Initialize House Pots with Good Moon currency
+    # Get Moon's initial Good Moon value from the planets table (good_val based on Tithi)
+    moon_initial_good_val = planet_data['Moon']['good_inv']
+    
+    # Fixed allocations for each sign
+    house_pot_allocations = {
+        'Aries': 20,
+        'Taurus': 60,
+        'Gemini': 40,
+        'Cancer': moon_initial_good_val,  # Variable - Moon's initial Good currency
+        'Leo': 30,
+        'Virgo': 60,
+        'Libra': 80,
+        'Scorpio': 20,
+        'Sagittarius': 100,
+        'Capricorn': 10,
+        'Aquarius': 10,
+        'Pisces': 80
+    }
+    
+    # Map Navamsa houses to signs and initialize pots
+    navamsa_house_pots = {}
+    for h in range(1, 13):
+        # Calculate the sign for this Navamsa house
+        sign_idx = (int(nav_lagna / 30) + (h - 1)) % 12
+        house_sign = sign_names[sign_idx]
+        navamsa_house_pots[h] = {
+            'sign': house_sign,
+            'good_moon_pot': house_pot_allocations[house_sign]
+        }
+    
+    # 3. Phase 3 Consumption Cycle
+    navp3_cycle_limit = 200
+    navp3_cycles = 0
+    navp3_loop_active = True
+    
+    # Standard malefics and benefics for Phase 3
+    standard_malefics = ['Saturn', 'Rahu', 'Ketu', 'Mars', 'Sun']
+    standard_benefics = ['Jupiter', 'Venus', 'Mercury']
+    
+    # Debtor rank for malefics (Phase 1 order)
+    malefic_debtor_order = ['Rahu', 'Sun', 'Saturn', 'Mars', 'Ketu']
+    
+    while navp3_loop_active and navp3_cycles < navp3_cycle_limit:
+        navp3_cycles += 1
+        navp3_something_happened = False
+        
+        # Process each Navamsa house
+        for house_num in range(1, 13):
+            pot_available = navamsa_house_pots[house_num]['good_moon_pot']
+            if pot_available <= 0.001:
+                continue
+            
+            # Get planets in this house
+            planets_in_house = [p for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu'] 
+                               if navamsa_phase3_data[p]['nav_house'] == house_num]
+            
+            if not planets_in_house:
+                continue
+            
+            # Classify Moon for this cycle based on its current inventory
+            moon_bad_currency = navamsa_phase3_data['Moon']['navp3_inventory'].get('Bad Moon', 0.0)
+            moon_is_malefic = moon_bad_currency > 0.001
+            
+            # Separate malefics and benefics in this house
+            malefics_in_house = []
+            benefics_in_house = []
+            
+            for p in planets_in_house:
+                if p in standard_malefics:
+                    malefics_in_house.append(p)
+                elif p in standard_benefics:
+                    benefics_in_house.append(p)
+                elif p == 'Moon':
+                    if moon_is_malefic:
+                        malefics_in_house.append(p)
+                    else:
+                        benefics_in_house.append(p)
+            
+            # Phase A: Malefic Priority
+            # Order malefics by debtor rank, with special Moon ranking
+            def get_malefic_order(planet):
+                if planet == 'Moon':
+                    # Calculate Moon's Bad Percentage
+                    moon_vol = navamsa_phase3_data['Moon']['nav_volume']
+                    if moon_vol > 0:
+                        bad_pct = (moon_bad_currency / moon_vol) * 100
+                    else:
+                        bad_pct = 0
+                    # If Bad % > 25: Rank Moon before Mars (index 3.5)
+                    # Else: Rank Moon after Mars (index 4.5)
+                    if bad_pct > 25:
+                        return 3.5  # Before Mars (Mars is index 3 in malefic_debtor_order)
+                    else:
+                        return 4.5  # After Mars
+                else:
+                    if planet in malefic_debtor_order:
+                        return malefic_debtor_order.index(planet)
+                    return 99
+            
+            sorted_malefics = sorted(malefics_in_house, key=get_malefic_order)
+            
+            # Process malefics
+            for malefic in sorted_malefics:
+                if navamsa_house_pots[house_num]['good_moon_pot'] <= 0.001:
+                    break
+                
+                current_debt = navamsa_phase3_data[malefic]['navp3_current_debt']
+                if current_debt >= -0.001:  # No debt
+                    continue
+                
+                debt_amount = abs(current_debt)
+                pot_available = navamsa_house_pots[house_num]['good_moon_pot']
+                
+                # Pull Good Moon currency from pot (up to debt or pot amount)
+                take = min(debt_amount, pot_available)
+                
+                if take > 0.001:
+                    # Reduce house pot
+                    navamsa_house_pots[house_num]['good_moon_pot'] -= take
+                    
+                    # Add Good Moon to planet's inventory
+                    navamsa_phase3_data[malefic]['navp3_inventory']['Good Moon'] = \
+                        navamsa_phase3_data[malefic]['navp3_inventory'].get('Good Moon', 0.0) + take
+                    
+                    # Reduce debt (make it more positive/less negative)
+                    navamsa_phase3_data[malefic]['navp3_current_debt'] += take
+                    
+                    navp3_something_happened = True
+            
+            # Phase B: Benefic Secondary
+            # Check if all malefics in house have cleared debt
+            all_malefics_clear = all(
+                navamsa_phase3_data[m]['navp3_current_debt'] >= -0.001 
+                for m in malefics_in_house
+            ) if malefics_in_house else True
+            
+            if all_malefics_clear and benefics_in_house:
+                # Sort benefics by debt percentage (highest first)
+                def get_debt_percentage(planet):
+                    vol = navamsa_phase3_data[planet]['nav_volume']
+                    debt = abs(navamsa_phase3_data[planet]['navp3_current_debt'])
+                    if vol > 0:
+                        return (debt / vol) * 100
+                    return 0
+                
+                sorted_benefics = sorted(benefics_in_house, key=get_debt_percentage, reverse=True)
+                
+                for benefic in sorted_benefics:
+                    if navamsa_house_pots[house_num]['good_moon_pot'] <= 0.001:
+                        break
+                    
+                    current_debt = navamsa_phase3_data[benefic]['navp3_current_debt']
+                    if current_debt >= -0.001:  # No debt
+                        continue
+                    
+                    debt_amount = abs(current_debt)
+                    pot_available = navamsa_house_pots[house_num]['good_moon_pot']
+                    
+                    # Pull Good Moon currency from pot
+                    take = min(debt_amount, pot_available)
+                    
+                    if take > 0.001:
+                        # Reduce house pot
+                        navamsa_house_pots[house_num]['good_moon_pot'] -= take
+                        
+                        # Add Good Moon to planet's inventory
+                        navamsa_phase3_data[benefic]['navp3_inventory']['Good Moon'] = \
+                            navamsa_phase3_data[benefic]['navp3_inventory'].get('Good Moon', 0.0) + take
+                        
+                        # Reduce debt (make it more positive/less negative)
+                        navamsa_phase3_data[benefic]['navp3_current_debt'] += take
+                        
+                        navp3_something_happened = True
+        
+        if not navp3_something_happened:
+            navp3_loop_active = False
+    
+    # --- FORMAT NAVAMSA PHASE 3 OUTPUT ---
+    navamsa_phase3_rows = []
+    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
+        inv = navamsa_phase3_data[p]['navp3_inventory']
+        
+        # Format inventory
+        inv_parts = []
+        own_keys = [p, f"Good {p}", f"Bad {p}"]
+        if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
+        
+        # Show own currencies first
+        for k in own_keys:
+            if k in inv and inv[k] > 0.001:
+                inv_parts.append(f"{k}[{inv[k]:.2f}]")
+        
+        # Then other currencies
+        for k, v in inv.items():
+            if k not in own_keys and v > 0.001:
+                inv_parts.append(f"{k}[{v:.2f}]")
+        
+        currency_str = ", ".join(inv_parts) if inv_parts else "-"
+        
+        # Format debt
+        debt_val = navamsa_phase3_data[p]['navp3_current_debt']
+        if abs(debt_val) < 0.01:
+            debt_str = "0.00"
+        else:
+            debt_str = f"{debt_val:.2f}"
+        
+        navamsa_phase3_rows.append([p, currency_str, debt_str])
+    
+    df_navamsa_phase3 = pd.DataFrame(navamsa_phase3_rows, columns=['Planet', 'Currency [Nav Phase 3]', 'Debt [Nav Phase 3]'])
+    
+    # ============================================================
+    # END OF NAVAMSA PHASE 3 LOGIC
+    # ============================================================
+    
+    # ============================================================
     # PHASE 1 CURRENCY EXCHANGE LOGIC (Rasi Chart)
     # ============================================================
     
@@ -1436,242 +1666,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # END OF PHASE 2 LOGIC
     # ============================================================
     
-    # ============================================================
-    # PHASE 3 CURRENCY EXCHANGE LOGIC (11th House Rule)
-    # ============================================================
-    
-    # Phase 3: 11th House Pot Distribution
-    # A pot of 50 "Good Moon" currency is available for planets in 11th House
-    
-    # Initialize Phase 3 data from Phase 2 final inventory
-    phase3_data = {}
-    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        phase3_data[p] = {
-            'p3_inventory': defaultdict(float),
-            'p3_current_debt': phase2_data[p]['p2_current_debt'],
-            'volume': planet_data[p]['volume'],
-            'L': planet_data[p]['L'],
-            'house': planet_house_map[p]  # Rasi house position
-        }
-        # Copy Phase 2 final inventory
-        for k, v in phase2_data[p]['p2_inventory'].items():
-            phase3_data[p]['p3_inventory'][k] = v
-    
-    # --- Step 1: Add 10% of Navamsa Phase 2 Gained Currencies and Debt ---
-    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        # Get Navamsa Phase 2 gained currencies (combined from Phase 1 and Phase 2)
-        navp2_gained_p1 = navamsa_phase2_data[p]['navp1_gained_currencies']
-        navp2_gained_p2 = navamsa_phase2_data[p]['navp2_gained_currencies']
-        
-        # Add 10% of each gained currency to Phase 3 inventory
-        for k, v in navp2_gained_p1.items():
-            if v > 0.001:
-                add_amount = v * 0.10
-                phase3_data[p]['p3_inventory'][k] += add_amount
-        
-        for k, v in navp2_gained_p2.items():
-            if v > 0.001:
-                add_amount = v * 0.10
-                phase3_data[p]['p3_inventory'][k] += add_amount
-        
-        # Get Navamsa Phase 2 debt (corrected debt value)
-        # Parse the debt string from Navamsa Phase 2
-        nav_debt_str = navamsa_phase2_data[p]['debt_navp2']
-        try:
-            nav_debt_val = float(nav_debt_str)
-        except:
-            nav_debt_val = 0.0
-        
-        # Add 10% of Navamsa Phase 2 debt to Phase 3 current debt
-        # Note: debt is negative, so we add the negative value (making it more negative)
-        if nav_debt_val < 0:
-            phase3_data[p]['p3_current_debt'] += nav_debt_val * 0.10
-    
-    # --- Step 2: Identify Planets in 11th House ---
-    house_11_planets = []
-    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        if phase3_data[p]['house'] == 11:
-            house_11_planets.append(p)
-    
-    # --- Step 3: Create the 11th House Pot ---
-    good_moon_pot = 50.0  # 50 units of "Good Moon" currency
-    
-    # --- Step 4: Planet Classification (Malefic vs Benefic) ---
-    # Standard Malefics: Saturn, Rahu, Ketu, Mars, Sun
-    standard_malefics = ['Saturn', 'Rahu', 'Ketu', 'Mars', 'Sun']
-    # Standard Benefics: Jupiter, Venus, Mercury
-    standard_benefics = ['Jupiter', 'Venus', 'Mercury']
-    
-    # Moon Classification Rule: Check if Moon holds any "Bad Moon" currency
-    moon_bad_moon_currency = phase3_data['Moon']['p3_inventory'].get('Bad Moon', 0.0)
-    moon_is_malefic_p3 = moon_bad_moon_currency > 0.001
-    
-    # Separate 11th House planets into malefics and benefics
-    malefics_in_11 = []
-    benefics_in_11 = []
-    
-    for p in house_11_planets:
-        if p in standard_malefics:
-            malefics_in_11.append(p)
-        elif p == 'Moon':
-            if moon_is_malefic_p3:
-                malefics_in_11.append(p)
-            else:
-                benefics_in_11.append(p)
-        elif p in standard_benefics:
-            benefics_in_11.append(p)
-    
-    # --- Step 5: Define Processing Order ---
-    # Malefic debtor_rank order from Phase 1: Rahu -> Sun -> Saturn -> Mars -> Ketu
-    malefic_priority_order = ['Rahu', 'Sun', 'Saturn', 'Mars', 'Ketu']
-    
-    # For Moon (if Malefic), insert based on Bad Moon Percentage
-    # Bad Moon Percentage = (Bad Moon Currency / Volume) * 100
-    if 'Moon' in malefics_in_11:
-        moon_volume = phase3_data['Moon']['volume']
-        if moon_volume > 0:
-            moon_bad_pct_p3 = (moon_bad_moon_currency / moon_volume) * 100
-        else:
-            moon_bad_pct_p3 = 0.0
-        
-        # Insert Moon into the malefic order based on its bad percentage
-        # Higher Bad % = Higher Priority (earlier in the list)
-        # Logic: if Bad % > 25, rank before Mars; otherwise rank after Mars
-        if moon_bad_pct_p3 > 25:
-            # Insert before Mars
-            mars_idx = malefic_priority_order.index('Mars')
-            malefic_priority_order.insert(mars_idx, 'Moon')
-        else:
-            # Insert after Mars
-            mars_idx = malefic_priority_order.index('Mars')
-            malefic_priority_order.insert(mars_idx + 1, 'Moon')
-    
-    # Filter malefic_priority_order to only include planets in 11th House
-    malefics_in_11_ordered = [p for p in malefic_priority_order if p in malefics_in_11]
-    
-    # --- Step 6: Phase 3 Consumption Cycle ---
-    p3_cycle_limit = 200
-    p3_cycles = 0
-    
-    # Phase A: Malefic Priority
-    all_malefics_cleared = False
-    
-    while p3_cycles < p3_cycle_limit and good_moon_pot > 0.001:
-        p3_cycles += 1
-        p3_something_happened = False
-        
-        # Check if all malefics have cleared their debt
-        all_malefics_cleared = True
-        for p in malefics_in_11_ordered:
-            if phase3_data[p]['p3_current_debt'] < -0.001:
-                all_malefics_cleared = False
-                break
-        
-        if not all_malefics_cleared:
-            # Phase A: Process Malefics
-            for malefic in malefics_in_11_ordered:
-                if good_moon_pot <= 0.001:
-                    break
-                
-                if phase3_data[malefic]['p3_current_debt'] >= -0.001:
-                    continue
-                
-                # Calculate how much to take from pot
-                needed = abs(phase3_data[malefic]['p3_current_debt'])
-                take = min(1.0, needed, good_moon_pot)
-                
-                if take > 0.001:
-                    # Consume from pot
-                    good_moon_pot -= take
-                    
-                    # Add "Good Moon" to inventory
-                    phase3_data[malefic]['p3_inventory']['Good Moon'] += take
-                    
-                    # Reduce debt (Good Moon reduces debt)
-                    phase3_data[malefic]['p3_current_debt'] += take
-                    
-                    p3_something_happened = True
-        else:
-            # Phase B: Benefic Secondary
-            # Only runs if all malefics have cleared debt or no malefics in 11th House
-            
-            # Sort benefics by Debt Percentage (Highest first)
-            benefic_debt_pct_p3 = {}
-            for p in benefics_in_11:
-                volume = phase3_data[p]['volume']
-                debt = abs(phase3_data[p]['p3_current_debt'])
-                if volume > 0:
-                    debt_pct = (debt / volume) * 100
-                else:
-                    debt_pct = 0.0
-                benefic_debt_pct_p3[p] = debt_pct
-            
-            benefics_in_11_sorted = sorted(benefics_in_11, key=lambda x: -benefic_debt_pct_p3[x])
-            
-            for benefic in benefics_in_11_sorted:
-                if good_moon_pot <= 0.001:
-                    break
-                
-                if phase3_data[benefic]['p3_current_debt'] >= -0.001:
-                    continue
-                
-                # Calculate how much to take from pot
-                needed = abs(phase3_data[benefic]['p3_current_debt'])
-                take = min(1.0, needed, good_moon_pot)
-                
-                if take > 0.001:
-                    # Consume from pot
-                    good_moon_pot -= take
-                    
-                    # Add "Good Moon" to inventory
-                    phase3_data[benefic]['p3_inventory']['Good Moon'] += take
-                    
-                    # Reduce debt (Good Moon reduces debt)
-                    phase3_data[benefic]['p3_current_debt'] += take
-                    
-                    p3_something_happened = True
-                    
-                    # Recalculate debt percentages
-                    for ben in benefics_in_11:
-                        vol = phase3_data[ben]['volume']
-                        dbt = abs(phase3_data[ben]['p3_current_debt'])
-                        if vol > 0:
-                            benefic_debt_pct_p3[ben] = (dbt / vol) * 100
-                        else:
-                            benefic_debt_pct_p3[ben] = 0.0
-                    
-                    # Re-sort for next iteration
-                    benefics_in_11_sorted = sorted(benefics_in_11, key=lambda x: -benefic_debt_pct_p3[x])
-        
-        if not p3_something_happened:
-            break
-    
-    # --- FORMAT PHASE 3 OUTPUT ---
-    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        inv = phase3_data[p]['p3_inventory']
-        parts = []
-        own_keys = [p, f"Good {p}", f"Bad {p}"]
-        if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
-        for k in own_keys:
-            if k in inv and inv[k] > 0.001: parts.append(f"{k}[{inv[k]:.2f}]")
-        for k, v in inv.items():
-            if k not in own_keys and v > 0.001: parts.append(f"{k}[{v:.2f}]")
-        phase3_data[p]['currency_p3'] = ", ".join(parts) if parts else "-"
-        d_val = phase3_data[p]['p3_current_debt']
-        if abs(d_val) < 0.01: phase3_data[p]['debt_p3'] = "0.00"
-        else: phase3_data[p]['debt_p3'] = f"{d_val:.2f}"
-    
-    phase3_rows = []
-    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        d_p3 = phase3_data[p]
-        phase3_rows.append([p, d_p3['currency_p3'], d_p3['debt_p3']])
-    
-    df_phase3 = pd.DataFrame(phase3_rows, columns=['Planet', 'Currency [Phase 3]', 'Debt [Phase 3]'])
-    
-    # ============================================================
-    # END OF PHASE 3 LOGIC
-    # ============================================================
-    
     df_planets = pd.DataFrame(rows, columns=['Planet','Deg','Sign','Nakshatra','Pada','Ld/SL','Vargothuva',
                                              'Parivardhana',
                                              'Dig Bala (%)','Sthana Bala (%)','Status','Updated Status',
@@ -1727,8 +1721,8 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     return {
         'name': name, 'df_planets': df_planets, 'df_navamsa_exchange': df_navamsa_exchange,
         'df_navamsa_phase2': df_navamsa_phase2,
-        'df_phase1': df_phase1, 'df_phase2': df_phase2, 'df_phase3': df_phase3, 
-        'df_rasi': df_rasi, 'df_nav': df_nav,
+        'df_navamsa_phase3': df_navamsa_phase3,
+        'df_phase1': df_phase1, 'df_phase2': df_phase2, 'df_rasi': df_rasi, 'df_nav': df_nav,
         'df_house_status': df_house_status, 'dasa_periods_filtered': dasa_filtered,
         'lagna_sid': lagna_sid, 'nav_lagna': nav_lagna, 'lagna_sign': lagna_sign,
         'nav_lagna_sign': get_sign(nav_lagna), 'moon_rasi': get_sign(moon_lon),
@@ -1907,14 +1901,14 @@ if st.session_state.chart_data:
     st.subheader("Navamsa Phase 2 Exchange")
     st.dataframe(cd['df_navamsa_phase2'], hide_index=True, use_container_width=True)
 
+    st.subheader("Navamsa Phase 3 Exchange")
+    st.dataframe(cd['df_navamsa_phase3'], hide_index=True, use_container_width=True)
+
     st.subheader("Currency Exchange Phase 1")
     st.dataframe(cd['df_phase1'], hide_index=True, use_container_width=True)
 
     st.subheader("Currency Exchange Phase 2")
     st.dataframe(cd['df_phase2'], hide_index=True, use_container_width=True)
-
-    st.subheader("Phase 3 Currency Exchange")
-    st.dataframe(cd['df_phase3'], hide_index=True, use_container_width=True)
 
     st.subheader("Rasi (D1) & Navamsa (D9) — South Indian")
     col1, col2 = st.columns(2, gap="small")
