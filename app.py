@@ -4,7 +4,7 @@ from math import sin, cos, tan, atan2, degrees, radians
 from astropy.time import Time
 from astropy.coordinates import get_body, solar_system_ephemeris, GeocentricTrueEcliptic
 from collections import defaultdict
-import pandas as pd 
+import pandas as pd
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 import matplotlib.pyplot as plt
@@ -1969,4 +1969,3 @@ else: st.info("Enter birth details above and click 'Generate Chart' to begin")
 
 st.markdown("---")
 st.caption("Buvi Astrology Data Generator")
-
