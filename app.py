@@ -841,12 +841,17 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             'nav_volume': navamsa_data[p]['nav_volume'],
             'nav_house': navamsa_data[p]['nav_house'],
             'navp2_gained_currencies': defaultdict(float),  # Track currencies gained in Phase 2
-            'navp2_carried_over': defaultdict(float)  # Track currencies carried over from Phase 1
+            'navp2_carried_over': defaultdict(float),  # Track currencies carried over from Phase 1
+            'navp1_gained_currencies': defaultdict(float)  # Copy of Phase 1 gained currencies
         }
         # Copy Navamsa Phase 1 final inventory as carried over
         for k, v in navamsa_data[p]['nav_inventory'].items():
             navamsa_phase2_data[p]['navp2_inventory'][k] = v
             navamsa_phase2_data[p]['navp2_carried_over'][k] = v  # Mark as carried over
+        
+        # Copy Phase 1 gained currencies for combined display later
+        for k, v in navamsa_data[p]['nav_gained_currencies'].items():
+            navamsa_phase2_data[p]['navp1_gained_currencies'][k] = v
     
     # Check if Ketu holds any Sun or Moon currency - if so, prevent transformation
     ketu_has_sun_moon = False
@@ -988,26 +993,34 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         inv = navamsa_phase2_data[p]['navp2_inventory']
         carried = navamsa_phase2_data[p]['navp2_carried_over']
-        gained = navamsa_phase2_data[p]['navp2_gained_currencies']
+        gained_p2 = navamsa_phase2_data[p]['navp2_gained_currencies']
+        gained_p1 = navamsa_phase2_data[p]['navp1_gained_currencies']
         
         # Format carried over currencies (what remains from Phase 1)
         carried_parts = []
         own_keys = [p, f"Good {p}", f"Bad {p}"]
         if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
         
-        # Calculate carried over (original inventory minus what was lost, excluding gained)
+        # Calculate carried over (original inventory minus what was lost, excluding gained in P2)
         for k in carried.keys():
             current_val = inv.get(k, 0.0)
-            gained_val = gained.get(k, 0.0)
-            carried_val = current_val - gained_val
+            gained_p2_val = gained_p2.get(k, 0.0)
+            carried_val = current_val - gained_p2_val
             if carried_val > 0.001:
                 carried_parts.append(f"{k}[{carried_val:.2f}]")
         
         navamsa_phase2_data[p]['currency_carried_str'] = ", ".join(carried_parts) if carried_parts else "-"
         
-        # Format gained currencies
+        # Combine gained currencies from Phase 1 AND Phase 2
+        combined_gained = defaultdict(float)
+        for k, v in gained_p1.items():
+            combined_gained[k] += v
+        for k, v in gained_p2.items():
+            combined_gained[k] += v
+        
+        # Format combined gained currencies
         gained_parts = []
-        for k, v in gained.items():
+        for k, v in combined_gained.items():
             if v > 0.001: gained_parts.append(f"{k}[{v:.2f}]")
         navamsa_phase2_data[p]['currency_gained_str'] = ", ".join(gained_parts) if gained_parts else "-"
         
@@ -1657,10 +1670,10 @@ if st.session_state.chart_data:
     st.subheader("Navamsa Phase 2 Exchange")
     st.dataframe(cd['df_navamsa_phase2'], hide_index=True, use_container_width=True)
 
-    st.subheader("Rasi Phase 1 Currency Exchange")
+    st.subheader("Currency Exchange Phase 1")
     st.dataframe(cd['df_phase1'], hide_index=True, use_container_width=True)
 
-    st.subheader("Rasi Phase 2 Currency Exchange")
+    st.subheader("Currency Exchange Phase 2")
     st.dataframe(cd['df_phase2'], hide_index=True, use_container_width=True)
 
     st.subheader("Rasi (D1) & Navamsa (D9) — South Indian")
