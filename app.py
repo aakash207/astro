@@ -506,6 +506,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     navamsa_data = {}
     navamsa_house_planets = defaultdict(list)  # house -> list of planet names
     
+    # Store initial default debts for debt correction later
+    nav_initial_default_debts = {}
+    
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]
         nav_lon = (L * 9) % 360
@@ -558,7 +561,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         nav_debt = 0.0
         if nav_bad_val > 0:
             nav_debt = -nav_bad_val
-        # REMOVED: Additional -50 penalty for Ketu - now naturally derived from bad currency
+        
+        # Store the initial default debt for debt correction
+        nav_initial_default_debts[planet_cap] = nav_debt
         
         # Initialize Navamsa inventory
         nav_inventory = defaultdict(float)
@@ -663,6 +668,10 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             return True
         return False
     
+    # Helper function to check if currency is Sun or Moon currency
+    def is_sun_or_moon_currency(c_key):
+        return 'Sun' in c_key or 'Moon' in c_key
+    
     # Navamsa Exchange Cycle - Only planets in SAME house can exchange
     nav_loop_active = True
     nav_cycle_limit = 200
@@ -761,7 +770,12 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                         if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency = True
                         if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency = True
                         
-                        if is_bad_currency: 
+                        # Special Ketu logic: If Ketu gains Sun or Moon currency, INCREASE debt
+                        if debtor == 'Ketu' and is_sun_or_moon_currency(tgt['key']):
+                            # Ketu gaining Sun/Moon currency increases its debt
+                            navamsa_data[debtor]['nav_current_debt'] -= take
+                            navamsa_data[debtor]['nav_debt'] -= take
+                        elif is_bad_currency: 
                             navamsa_data[debtor]['nav_current_debt'] -= take
                             navamsa_data[debtor]['nav_debt'] -= take  # Add to debt for bad currency gained
                         else: 
@@ -825,24 +839,36 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             'navp2_inventory': defaultdict(float),
             'navp2_current_debt': navamsa_data[p]['nav_current_debt'],
             'nav_volume': navamsa_data[p]['nav_volume'],
-            'nav_house': navamsa_data[p]['nav_house']
+            'nav_house': navamsa_data[p]['nav_house'],
+            'navp2_gained_currencies': defaultdict(float),  # Track currencies gained in Phase 2
+            'navp2_carried_over': defaultdict(float)  # Track currencies carried over from Phase 1
         }
-        # Copy Navamsa Phase 1 final inventory
+        # Copy Navamsa Phase 1 final inventory as carried over
         for k, v in navamsa_data[p]['nav_inventory'].items():
             navamsa_phase2_data[p]['navp2_inventory'][k] = v
+            navamsa_phase2_data[p]['navp2_carried_over'][k] = v  # Mark as carried over
     
-    # TRANSFORM Bad Ketu to Good Ketu before Navamsa Phase 2
+    # Check if Ketu holds any Sun or Moon currency - if so, prevent transformation
+    ketu_has_sun_moon = False
+    for k in navamsa_phase2_data['Ketu']['navp2_inventory'].keys():
+        if is_sun_or_moon_currency(k) and navamsa_phase2_data['Ketu']['navp2_inventory'][k] > 0.001:
+            ketu_has_sun_moon = True
+            break
+    
+    # TRANSFORM Bad Ketu to Good Ketu before Navamsa Phase 2 (only if no Sun/Moon currency)
     nav_bad_ketu_remaining = navamsa_phase2_data['Ketu']['navp2_inventory'].get('Bad Ketu', 0.0)
-    if nav_bad_ketu_remaining > 0:
+    if nav_bad_ketu_remaining > 0 and not ketu_has_sun_moon:
         # Transform Bad Ketu to Good Ketu
         navamsa_phase2_data['Ketu']['navp2_inventory']['Good Ketu'] = navamsa_phase2_data['Ketu']['navp2_inventory'].get('Good Ketu', 0.0) + nav_bad_ketu_remaining
+        navamsa_phase2_data['Ketu']['navp2_carried_over']['Good Ketu'] = navamsa_phase2_data['Ketu']['navp2_carried_over'].get('Good Ketu', 0.0) + nav_bad_ketu_remaining
         navamsa_phase2_data['Ketu']['navp2_inventory']['Bad Ketu'] = 0.0
+        navamsa_phase2_data['Ketu']['navp2_carried_over']['Bad Ketu'] = 0.0
         # Reduce Ketu's debt by the amount of currency it holds
         navamsa_phase2_data['Ketu']['navp2_current_debt'] += nav_bad_ketu_remaining
     
-    # Add Ketu to benefics for Navamsa Phase 2 (only if it has Good currency)
+    # Add Ketu to benefics for Navamsa Phase 2 (only if it has Good currency and no Sun/Moon)
     ketu_good_currency = navamsa_phase2_data['Ketu']['navp2_inventory'].get('Good Ketu', 0.0)
-    if ketu_good_currency > 0:
+    if ketu_good_currency > 0 and not ketu_has_sun_moon:
         nav_core_benefics_p2.append('Ketu')
     
     # Calculate Debt Percentage for eligible benefics in Navamsa
@@ -938,6 +964,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                     navamsa_phase2_data[tgt['planet']]['navp2_current_debt'] -= take
                     navamsa_phase2_data[puller]['navp2_inventory'][tgt['key']] += take
                     
+                    # Track as gained currency (not carried over)
+                    navamsa_phase2_data[puller]['navp2_gained_currencies'][tgt['key']] += take
+                    
                     # Good currency reduces debt (adds to current_debt making it less negative)
                     navamsa_phase2_data[puller]['navp2_current_debt'] += take
                     
@@ -958,24 +987,45 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # --- FORMAT NAVAMSA PHASE 2 OUTPUT ---
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         inv = navamsa_phase2_data[p]['navp2_inventory']
-        parts = []
+        carried = navamsa_phase2_data[p]['navp2_carried_over']
+        gained = navamsa_phase2_data[p]['navp2_gained_currencies']
+        
+        # Format carried over currencies (what remains from Phase 1)
+        carried_parts = []
         own_keys = [p, f"Good {p}", f"Bad {p}"]
         if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
-        for k in own_keys:
-            if k in inv and inv[k] > 0.001: parts.append(f"{k}[{inv[k]:.2f}]")
-        for k, v in inv.items():
-            if k not in own_keys and v > 0.001: parts.append(f"{k}[{v:.2f}]")
-        navamsa_phase2_data[p]['currency_navp2'] = ", ".join(parts) if parts else "-"
-        d_val = navamsa_phase2_data[p]['navp2_current_debt']
-        if abs(d_val) < 0.01: navamsa_phase2_data[p]['debt_navp2'] = "0.00"
-        else: navamsa_phase2_data[p]['debt_navp2'] = f"{d_val:.2f}"
+        
+        # Calculate carried over (original inventory minus what was lost, excluding gained)
+        for k in carried.keys():
+            current_val = inv.get(k, 0.0)
+            gained_val = gained.get(k, 0.0)
+            carried_val = current_val - gained_val
+            if carried_val > 0.001:
+                carried_parts.append(f"{k}[{carried_val:.2f}]")
+        
+        navamsa_phase2_data[p]['currency_carried_str'] = ", ".join(carried_parts) if carried_parts else "-"
+        
+        # Format gained currencies
+        gained_parts = []
+        for k, v in gained.items():
+            if v > 0.001: gained_parts.append(f"{k}[{v:.2f}]")
+        navamsa_phase2_data[p]['currency_gained_str'] = ", ".join(gained_parts) if gained_parts else "-"
+        
+        # Debt correction: Add back the initial default debt (subtract since initial is negative)
+        initial_debt = nav_initial_default_debts.get(p, 0.0)
+        corrected_debt = navamsa_phase2_data[p]['navp2_current_debt'] - initial_debt
+        
+        if abs(corrected_debt) < 0.01: 
+            navamsa_phase2_data[p]['debt_navp2'] = "0.00"
+        else: 
+            navamsa_phase2_data[p]['debt_navp2'] = f"{corrected_debt:.2f}"
     
     navamsa_phase2_rows = []
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         d_navp2 = navamsa_phase2_data[p]
-        navamsa_phase2_rows.append([p, d_navp2['currency_navp2'], d_navp2['debt_navp2']])
+        navamsa_phase2_rows.append([p, d_navp2['currency_carried_str'], d_navp2['currency_gained_str'], d_navp2['debt_navp2']])
     
-    df_navamsa_phase2 = pd.DataFrame(navamsa_phase2_rows, columns=['Planet', 'Currency [Nav Phase 2]', 'Debt [Nav Phase 2]'])
+    df_navamsa_phase2 = pd.DataFrame(navamsa_phase2_rows, columns=['Planet', 'Inventory Carried Over', 'Gained Currency', 'Debt [Nav Phase 2]'])
     
     # ============================================================
     # END OF NAVAMSA PHASE 2 LOGIC
@@ -1138,8 +1188,13 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                         if tgt['planet'] in ['Saturn', 'Rahu'] and 'Bad' in tgt['key']: is_bad_currency_flag = True
                         if tgt['planet'] == 'Moon' and 'Bad' in tgt['key']: is_bad_currency_flag = True
                         
-                        if is_bad_currency_flag: planet_data[debtor]['current_debt'] -= take 
-                        else: planet_data[debtor]['current_debt'] += take
+                        # Special Ketu logic in Rasi Phase 1: If Ketu gains Sun or Moon currency, INCREASE debt
+                        if debtor == 'Ketu' and is_sun_or_moon_currency(tgt['key']):
+                            planet_data[debtor]['current_debt'] -= take
+                        elif is_bad_currency_flag: 
+                            planet_data[debtor]['current_debt'] -= take 
+                        else: 
+                            planet_data[debtor]['current_debt'] += take
                     
                     planet_data[debtor][tracker_key] = pulled + take
                     something_happened = True
@@ -1207,18 +1262,26 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         for k, v in planet_data[p]['final_inventory'].items():
             phase2_data[p]['p2_inventory'][k] = v
     
-    # TRANSFORM Bad Ketu to Good Ketu before Phase 2
+    # Check if Ketu holds any Sun or Moon currency - if so, prevent transformation
+    rasi_ketu_has_sun_moon = False
+    for k in phase2_data['Ketu']['p2_inventory'].keys():
+        if is_sun_or_moon_currency(k) and phase2_data['Ketu']['p2_inventory'][k] > 0.001:
+            rasi_ketu_has_sun_moon = True
+            break
+    
+    # TRANSFORM Bad Ketu to Good Ketu before Phase 2 (only if no Sun/Moon currency)
     # If Ketu has Bad Ketu currency remaining, transform it and reduce debt
     bad_ketu_remaining = phase2_data['Ketu']['p2_inventory'].get('Bad Ketu', 0.0)
-    if bad_ketu_remaining > 0:
+    if bad_ketu_remaining > 0 and not rasi_ketu_has_sun_moon:
         # Transform Bad Ketu to Good Ketu
         phase2_data['Ketu']['p2_inventory']['Good Ketu'] = phase2_data['Ketu']['p2_inventory'].get('Good Ketu', 0.0) + bad_ketu_remaining
         phase2_data['Ketu']['p2_inventory']['Bad Ketu'] = 0.0
         # Reduce Ketu's debt by the amount of currency it holds
         phase2_data['Ketu']['p2_current_debt'] += bad_ketu_remaining
     
-    # Add Ketu to benefics for Phase 2
-    core_benefics_p2.append('Ketu')
+    # Add Ketu to benefics for Phase 2 (only if no Sun/Moon currency)
+    if not rasi_ketu_has_sun_moon:
+        core_benefics_p2.append('Ketu')
     
     # Calculate Debt Percentage for eligible benefics
     # Debt Percentage = (|Debt Phase 1| / Volume) × 100
