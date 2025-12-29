@@ -11,8 +11,10 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 from timezonefinder import TimezoneFinder
 import pytz
+
 # ---- Matplotlib defaults (crisp + thin) ----
 plt.rcParams.update({"figure.dpi": 300, "savefig.dpi": 300, "lines.linewidth": 0.28})
+
 # ---- Constants ----
 cities_fallback = {
     'Chennai': {'lat': 13.08, 'lon': 80.27}, 'Mumbai': {'lat': 19.07, 'lon': 72.88},
@@ -20,6 +22,7 @@ cities_fallback = {
     'Kolkata': {'lat': 22.57, 'lon': 88.36}, 'Hyderabad': {'lat': 17.39, 'lon': 78.49},
 }
 sign_names = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo','Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces']
+
 lords_full = ['Ketu','Venus','Sun','Moon','Mars','Rahu','Jupiter','Saturn','Mercury']
 lords_short = ['Ke','Ve','Su','Mo','Ma','Ra','Ju','Sa','Me']
 nak_names = ['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punarvasu','Pushya','Ashlesha',
@@ -28,6 +31,7 @@ nak_names = ['Ashwini','Bharani','Krittika','Rohini','Mrigashira','Ardra','Punar
              'Purva Bhadrapada','Uttara Bhadrapada','Revati']
 years = [7, 20, 6, 10, 7, 18, 16, 19, 17] * 3
 sign_lords = ['Mars','Venus','Mercury','Moon','Sun','Mercury','Venus','Mars','Jupiter','Saturn','Saturn','Jupiter']
+
 # Sthana Bala Dict
 sthana_bala_dict = {
     'Sun': [100,90,80,70,60,50,40,50,60,70,80,90],
@@ -40,6 +44,7 @@ sthana_bala_dict = {
     'Rahu': [100]*12,
     'Ketu': [100]*12
 }
+
 # Status Mapping
 status_data = {
     'Sun': {'Uchcham': 'Aries', 'Moolathirigonam': None, 'Aatchi': 'Leo', 'Neecham': 'Libra'},
@@ -50,6 +55,7 @@ status_data = {
     'Mars': {'Uchcham': 'Capricorn', 'Moolathirigonam': 'Aries', 'Aatchi': 'Scorpio', 'Neecham': 'Cancer'},
     'Saturn': {'Uchcham': 'Libra', 'Moolathirigonam': 'Aquarius', 'Aatchi': 'Capricorn', 'Neecham': 'Aries'}
 }
+
 # Capacity percentages (default volume)
 capacity_dict = {
     'Saturn': 100, 'Mars': 100, 'Sun': 100, 'Jupiter': 100, 
@@ -65,32 +71,41 @@ bad_capacity_dict = {
     'Saturn': 100, 'Mars': 75, 'Sun': 50, 'Jupiter': 0, 
     'Venus': 0, 'Mercury': 0, 'Rahu': 100, 'Ketu': 100
 }
+
 # Moon Tithi Capacities
 shukla_good = [100, 9, 16, 23, 30, 37, 44, 51, 58, 65, 72, 79, 86, 93, 100]
 shukla_bad = [0] * 15
 krishna_good = [93, 86, 79, 72, 65, 58, 51, 44, 37, 30, 23, 16, 9, 2, 0]
 krishna_bad = [7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 91, 98, 100]
+
 # Tithi Names for Phase 1
 shukla_tithi_names = ['Shukla Pratipada', 'Shukla Dwitiya', 'Shukla Tritiya', 'Shukla Chaturthi', 'Shukla Panchami', 'Shukla Shashti', 'Shukla Saptami', 'Shukla Ashtami', 'Shukla Navami', 'Shukla Dashami', 'Shukla Ekadashi', 'Shukla Dwadashi', 'Shukla Trayodashi', 'Shukla Chaturdashi', 'Purnima']
 krishna_tithi_names = ['Krishna Pratipada', 'Krishna Dwitiya', 'Krishna Tritiya', 'Krishna Chaturthi', 'Krishna Panchami', 'Krishna Shashti', 'Krishna Saptami', 'Krishna Ashtami', 'Krishna Navami', 'Krishna Dashami', 'Krishna Ekadashi', 'Krishna Dwadashi', 'Krishna Trayodashi', 'Krishna Chaturdashi', 'Amavasya']
+
 # Single currency planets
 single_currency_planets = ['Venus', 'Jupiter', 'Mercury', 'Rahu', 'Ketu', 'Saturn']
 bad_currency_planets = ['Saturn', 'Rahu', 'Ketu']
 base_malefics = ['Saturn', 'Mars', 'Sun', 'Rahu']
+
 # Malefic planets list for Phase 1 priority logic
 malefic_planets = ['Saturn', 'Rahu', 'Ketu', 'Mars', 'Sun']
+
 # Mix Dictionary for Phase 1 - Angular Gap to Pull Percentage
 mix_dict = {0:100,1:100,2:100,3:95,4:90,5:85,6:80,7:75,8:70,9:65,10:60,11:55,12:50,13:45,14:40,15:35,16:30,17:25,18:20,19:15,20:10,21:5,22:0}
+
 # ---- Astro helpers ----
 def get_lahiri_ayanamsa(year):
     base = 23.853; rate = 50.2388/3600.0
     return (base + (year - 2000) * rate) % 360
+
 def get_obliquity(d):
     T = d/36525.0
     return ((((-4.34e-8*T - 5.76e-7)*T + 0.0020034)*T - 1.831e-4)*T - 46.836769)*T/3600 + 23.4392794444444
+
 def get_gmst(d):
     T = d/36525.0
     return (67310.54841 + (3155760000 + 8640184.812866)*T + 0.093104*T**2 - 6.2e-6*T**3)/3600 % 24
+
 def get_ascendant(jd, lat, lon):
     d = jd - 2451545.0
     oer = radians(get_obliquity(d))
@@ -99,9 +114,11 @@ def get_ascendant(jd, lat, lon):
     sin_asc = cos(lstr)
     cos_asc = -(sin(lstr)*cos(oer) + tan(radians(lat))*sin(oer))
     return degrees(atan2(sin_asc, cos_asc)) % 360
+
 def get_sidereal_lon(tlon, ayan): return (tlon - ayan) % 360
 def get_sign(lon): return sign_names[int(lon/30)]
 def get_house(lon, lagna_lon): return (int(lon/30) - int(lagna_lon/30)) % 12 + 1
+
 def get_nakshatra_details(lon):
     dnak = 360/27
     idx = int(lon // dnak) % 27
@@ -110,6 +127,7 @@ def get_nakshatra_details(lon):
     star = idx % 9
     sub = (star + int((pos/dnak)*9)) % 9
     return nak_names[idx], pada, lords_short[star], lords_short[sub]
+
 def generate_vimshottari_dasa(moon_lon):
     nak = int(moon_lon * 27 / 360)
     lord_idx = nak % 9
@@ -117,6 +135,7 @@ def generate_vimshottari_dasa(moon_lon):
     pos_in_nak = moon_lon % (360/27)
     fraction = pos_in_nak / (360/27)
     return lord_idx, y * (1 - fraction)
+
 def generate_periods(start_date, lord_idx, total_years, level='dasa', max_depth=3):
     periods, remaining, i, current = [], total_years, lord_idx, start_date
     depth_map = {'dasa':0,'bhukti':1,'anthara':2,'sukshma':3,'prana':4,'sub_prana':5}
@@ -130,12 +149,14 @@ def generate_periods(start_date, lord_idx, total_years, level='dasa', max_depth=
         periods.append((lord, current, end, subs))
         remaining -= y; current = end; i = (i+1) % 9
     return periods
+
 def filter_from_birth(periods, birth_dt):
     out = []
     for lord, start, end, sub in periods:
         if end > birth_dt:
             out.append((lord, max(start, birth_dt), end, filter_from_birth(sub, birth_dt) if sub else []))
     return out
+
 def duration_str(delta, level='dasa'):
     days = delta.total_seconds()/86400
     if days < 1 and level in ['sukshma','prana','sub_prana']:
@@ -144,6 +165,7 @@ def duration_str(delta, level='dasa'):
     y = int(days/365.25); rem = days % 365.25
     m = int(rem/30.4375); d = int(rem % 30.4375)
     return "Less than 1 day" if y+m+d==0 else f"{y}y {m}m {d}d"
+
 def calculate_dig_bala(planet, lon, lagna):
     east = lagna % 360
     north = (lagna + 90) % 360
@@ -164,12 +186,15 @@ def calculate_dig_bala(planet, lon, lagna):
     virupas = ang_dist / 3
     percentage = (virupas / 60) * 100
     return round(percentage, 2)
+
 def get_navamsa_sign(lon):
     nav_lon = (lon * 9) % 360
     return get_sign(nav_lon)
+
 def get_sign_lord(sign):
     sign_idx = sign_names.index(sign)
     return sign_lords[sign_idx]
+
 def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # parse time
     try:
@@ -177,38 +202,39 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if not (0<=hour<=23 and 0<=minute<=59): raise ValueError
     except:
         raise ValueError("Time must be in HH:MM format (24-hour)")
-    
+     
     local_dt = datetime.combine(date_obj, datetime.min.time().replace(hour=hour, minute=minute))
     utc_dt = local_dt - timedelta(hours=tz_offset)
     t = Time(utc_dt); jd = t.jd; ayan = get_lahiri_ayanamsa(utc_dt.year)
-    
+     
     with solar_system_ephemeris.set('builtin'):
         lon_trop = {}
         for nm in ['sun','moon','mercury','venus','mars','jupiter','saturn']:
             ecl = get_body(nm, t).transform_to(GeocentricTrueEcliptic()); lon_trop[nm] = ecl.lon.deg
-    
+     
     d = jd - 2451545.0; T = d/36525.0
     omega = (125.04452 - 1934.136261*T + 0.0020708*T**2 + T**3/450000) % 360
     lon_trop['rahu'] = omega; lon_trop['ketu'] = (omega + 180) % 360
     lon_sid = {p: get_sidereal_lon(lon_trop[p], ayan) for p in lon_trop}
     lagna_sid = get_sidereal_lon(get_ascendant(jd, lat, lon), ayan)
-    
+     
     # --- Step 1: Identify Moon Phase (Paksha) ---
     sun_lon = lon_sid['sun']
     moon_lon = lon_sid['moon']
     diff = (moon_lon - sun_lon) % 360
-    
+     
     # Waxing (Shukla): 0 -> 180 (Towards Full Moon)
     # Waning (Krishna): 180 -> 360 (Towards New Moon)
     if diff < 180:
         paksha = 'Shukla'
     else:
         paksha = 'Krishna'
+
     # Calculate Tithi (1-30)
     tithi_fraction = diff / 12
     tithi = int(tithi_fraction) + 1
     if tithi > 30: tithi = 30
-    
+     
     if paksha == 'Shukla':
         tithi_idx = tithi - 1
         if tithi_idx > 14: tithi_idx = 14
@@ -218,11 +244,13 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         if tithi_idx < 0: tithi_idx = 0
         if tithi_idx > 14: tithi_idx = 14
         moon_phase_name = krishna_tithi_names[tithi_idx]
+
     # rasi houses
     house_planets_rasi = defaultdict(list)
     positions = {**lon_sid, 'asc': lagna_sid}
     for p, L in positions.items():
         house_planets_rasi[get_house(L, lagna_sid)].append(p.capitalize() if p != 'asc' else 'Asc')
+
     # First pass: Calculate status and sign for all planets
     planet_status_map = {}
     planet_sign_map = {}
@@ -243,10 +271,11 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             elif sign == mapping['Moolathirigonam']: status = 'Moolathirigonam'
             elif sign == mapping['Aatchi']: status = 'Aatchi'
         planet_status_map[planet_cap] = status
+
     # --- Calculate Parivardhana Yoga ---
     parivardhana_map = {}
     planets_for_parivardhana = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
-    
+     
     for planet_a in planets_for_parivardhana:
         sign_a = planet_sign_map[planet_a]  # Sign where planet A is placed
         lord_of_sign_a = get_sign_lord(sign_a)  # Lord of that sign
@@ -260,21 +289,21 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 house_a = get_house(lon_sid[planet_a.lower()], lagna_sid)
                 house_b = get_house(lon_sid[lord_of_sign_a.lower()], lagna_sid)
                 parivardhana_map[planet_a] = f"{lord_of_sign_a} (H{house_a}-H{house_b})"
-    
+     
     # planets table
     rows = []
     planet_data = {}
     asc_deg = lagna_sid % 360; asc_sign = get_sign(asc_deg)
     a_nak, a_pada, a_ld, a_sl = get_nakshatra_details(asc_deg)
     dig_bala_asc = calculate_dig_bala('asc', asc_deg, lagna_sid)
-    
+     
     # Vargothuva for Ascendant
     asc_nav_sign = get_navamsa_sign(asc_deg)
     asc_vargothuva = 'Yes' if asc_sign == asc_nav_sign else 'No'
-    
+     
     rows.append(['Asc', f"{asc_deg:.2f}", asc_sign, a_nak, a_pada, f"{a_ld}/{a_sl}", asc_vargothuva, '-',
                  f"{dig_bala_asc}%" if dig_bala_asc is not None else '', '', '', '', '', '', ''])
-    
+     
     for p in ['sun','moon','mars','mercury','jupiter','venus','saturn','rahu','ketu']:
         L = lon_sid[p]; sign = get_sign(L); nak, pada, ld, sl = get_nakshatra_details(L)
         dig_bala = calculate_dig_bala(p, L, lagna_sid)
@@ -290,7 +319,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         
         # Get status from pre-calculated map
         status = planet_status_map[planet_cap]
-        
+            
         capacity = capacity_dict.get(planet_cap, None)
         volume = (capacity * sthana / 100.0) if capacity is not None else 0.0
         
@@ -309,6 +338,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         else:
             good_pct = good_capacity_dict.get(planet_cap, 0)
             bad_pct = bad_capacity_dict.get(planet_cap, 0)
+
         # Calculate Values
         good_val = volume * (good_pct / 100.0)
         bad_val = volume * (bad_pct / 100.0)
@@ -391,6 +421,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             if bad_val > 0:
                 total_debt = -bad_val
                 has_debt = True
+
         # Format debt string
         if has_debt:
             debt_str = f"{total_debt:.2f}"
@@ -412,7 +443,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                 currency_parts.append(f"Good {planet_cap}[{good_val:.2f}]")
             if bad_val > 0:
                 currency_parts.append(f"Bad {planet_cap}[{bad_val:.2f}]")
+
         default_currency_str = ", ".join(currency_parts)
+
         planet_data[planet_cap] = {
             'sthana': sthana, 'volume': volume, 'dig_bala': dig_bala, 'L': L, 
             'sign': sign, 'nak': nak, 'pada': pada, 'ld_sl': f"{ld}/{sl}", 
@@ -447,6 +480,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         
         # REMOVED: Special Ketu Rule that added additional -50 flat debt
         # Ketu's debt is now naturally derived from its bad currency (which is 50 by default)
+
     # Build rows with all columns
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         data = planet_data[p]
@@ -681,6 +715,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                                 'planet': t_name, 'key': key, 'score': score, 'max_pull': max_pull,
                                 'is_good': is_good
                             })
+
             # Sort targets: For Malefics, prioritize Good currencies first
             if debtor_is_malefic:
                 # Sort by: is_good (True first), then score (highest first)
@@ -752,6 +787,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                     
                     # Recalculate good_available after each transaction
                     good_available = any(t['is_good'] and navamsa_data[t['planet']]['nav_inventory'].get(t['key'], 0) > 0 for t in potential_targets)
+
         if not nav_something_happened: nav_loop_active = False
     
     # Format Navamsa Exchange Output
@@ -996,8 +1032,6 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             navamsa_phase2_data[p]['debt_navp2'] = "0.00"
         else: 
             navamsa_phase2_data[p]['debt_navp2'] = f"{corrected_debt:.2f}"
-        # Store the float for later use in Phase 3
-        navamsa_phase2_data[p]['navp2_corrected_debt_float'] = corrected_debt
     
     navamsa_phase2_rows = []
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
@@ -1039,6 +1073,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
             debtor_rank.append('Moon') # Rank 7 (Light)
             
     debtor_rank.append('Ketu') # Rank 8
+
     # 2. CURRENCY RANK (The Menu)
     def get_currency_rank_score(p_name, c_key):
         if p_name == 'Moon':
@@ -1070,6 +1105,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         # Bad Ketu treated as bad by Sun/Moon, but good by others
         if c_key == 'Bad Ketu': return 150
         return 0
+
     # 3. CYCLE LOGIC
     loop_active = True
     cycle_limit = 200
@@ -1115,6 +1151,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                                 'planet': t_name, 'key': key, 'score': score, 'gap': gap, 'max_pull': max_pull,
                                 'is_good': is_good
                             })
+
             # Sort targets: For Malefics, prioritize Good currencies first
             if debtor_is_malefic:
                 # Sort by: is_good (True first), then score (highest first), then gap (closest first)
@@ -1177,7 +1214,9 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                     
                     # Recalculate good_available after each transaction
                     good_available = any(t['is_good'] and planet_data[t['planet']]['final_inventory'].get(t['key'], 0) > 0 for t in potential_targets)
+
         if not something_happened: loop_active = False
+
     # --- FORMAT PHASE 1 OUTPUT ---
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         inv = planet_data[p]['final_inventory']
@@ -1192,6 +1231,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         d_val = planet_data[p]['current_debt']
         if abs(d_val) < 0.01: planet_data[p]['debt_p1'] = "0.00"
         else: planet_data[p]['debt_p1'] = f"{d_val:.2f}"
+
     phase1_rows = []
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         d_p1 = planet_data[p]
@@ -1257,7 +1297,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         core_benefics_p2.append('Ketu')
     
     # Calculate Debt Percentage for eligible benefics
-    # Debt Percentage = (|Debt Phase 1| / Volume) × 100
+    # Debt Percentage = (|Debt Phase 1| / Volume) * 100
     benefic_debt_pct = {}
     for p in core_benefics_p2:
         volume = phase2_data[p]['volume']
@@ -1397,149 +1437,116 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # ============================================================
 
     # ============================================================
-    # PHASE 3 CURRENCY EXCHANGE LOGIC (Rasi Chart - 11th House Pot)
+    # PHASE 3 CURRENCY EXCHANGE LOGIC (11th House Rule)
     # ============================================================
 
-    # Initialization for Phase 3: Copy from Phase 2
+    # 1. Init with Phase 2 data and Apply Navamsa Injection
     phase3_data = {}
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         phase3_data[p] = {
-            'p3_inventory': defaultdict(float),
+            'p3_inventory': phase2_data[p]['p2_inventory'].copy(),
             'p3_current_debt': phase2_data[p]['p2_current_debt'],
-            'volume': phase2_data[p]['volume'],
-            'L': phase2_data[p]['L'],
-            'house': planet_house_map[p]  # House from Rasi
+            'volume': phase2_data[p]['volume']
         }
-        # Copy Phase 2 final inventory
-        for k, v in phase2_data[p]['p2_inventory'].items():
-            phase3_data[p]['p3_inventory'][k] = v
+        
+        # Navamsa Injection (10% of Navamsa Phase 2 Gained Currencies)
+        nav_gained = navamsa_phase2_data[p]['navp2_gained_currencies']
+        nav_debt_val = navamsa_phase2_data[p]['navp2_current_debt']
+        
+        for k, v in nav_gained.items():
+            if v > 0:
+                phase3_data[p]['p3_inventory'][k] = phase3_data[p]['p3_inventory'].get(k, 0.0) + (v * 0.1)
+        
+        # Add 10% of Navamsa Phase 2 Debt (adds negative value or positive value depending on debt state)
+        phase3_data[p]['p3_current_debt'] += (nav_debt_val * 0.1)
 
-    # The 10% Navamsa Rule
-    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        # Add 10% of Navamsa Phase 2 Gained Currencies to Phase 3 inventory
-        combined_gained = defaultdict(float)
-        for k, v in navamsa_phase2_data[p]['navp1_gained_currencies'].items():
-            combined_gained[k] += v
-        for k, v in navamsa_phase2_data[p]['navp2_gained_currencies'].items():
-            combined_gained[k] += v
-        for key, val in combined_gained.items():
-            if val > 0:
-                add_amount = val * 0.10
-                phase3_data[p]['p3_inventory'][key] += add_amount
+    # 2. 11th House Pot Setup
+    pot_p3 = 50.0
+    residents_11 = [p for p, h in planet_house_map.items() if h == 11]
+    
+    # 3. Classification
+    malefics_11 = []
+    benefics_11 = []
+    moon_is_malefic_p3 = False
+    
+    if 'Moon' in residents_11:
+        if phase3_data['Moon']['p3_inventory'].get('Bad Moon', 0) > 0.001:
+            moon_is_malefic_p3 = True
+            
+    base_malefics_set = ['Saturn', 'Rahu', 'Ketu', 'Mars', 'Sun']
+    base_benefics_set = ['Jupiter', 'Venus', 'Mercury']
+    
+    for p in residents_11:
+        if p in base_malefics_set:
+            malefics_11.append(p)
+        elif p == 'Moon':
+            if moon_is_malefic_p3: malefics_11.append(p)
+            else: benefics_11.append(p)
+        elif p in base_benefics_set:
+            benefics_11.append(p)
+            
+    # Sort Malefics based on Phase 1 Debtor Rank Logic
+    p3_debtor_rank = ['Rahu', 'Sun', 'Saturn']
+    if moon_is_malefic_p3:
+        # Use existing 'moon_bad_pct' from planet_data to determine rank
+        is_waning = (paksha == 'Krishna')
+        if is_waning and moon_phase_name == 'Amavasya':
+             p3_debtor_rank.append('Moon') # Rank 4
+        p3_debtor_rank.append('Mars') # Rank 5
+        if is_waning and moon_phase_name != 'Amavasya':
+             p3_debtor_rank.append('Moon') # Rank 6/7 (Appended after Mars)
+    else:
+        p3_debtor_rank.append('Mars')
+    p3_debtor_rank.append('Ketu')
 
-        # Add 10% of Navamsa Phase 2 Debt to Phase 3 current debt
-        nav_debt_float = navamsa_phase2_data[p]['navp2_corrected_debt_float']
-        debt_add = nav_debt_float * 0.10
-        phase3_data[p]['p3_current_debt'] += debt_add
+    malefics_11.sort(key=lambda x: p3_debtor_rank.index(x) if x in p3_debtor_rank else 99)
 
-    # The 11th House Pot: 50 "Good Moon" currency
-    pot_currency = 'Good Moon'
-    pot_amount = 50.0
-
-    # Identify planets in House 11 of Rasi chart
-    house_11_planets = [pl for pl in house_planets_rasi[11] if pl != 'Asc']
-
-    # Planet Classification (only for planets in House 11)
-    standard_malefics = ['Saturn', 'Rahu', 'Ketu', 'Mars', 'Sun']
-    standard_benefics = ['Jupiter', 'Venus', 'Mercury']
-    malefics_in_11 = []
-    benefics_in_11 = []
-    moon_is_malefic = False
-    moon_bad_amount = phase3_data['Moon']['p3_inventory'].get('Bad Moon', 0.0)
-    if 'Moon' in house_11_planets:
-        if moon_bad_amount > 0:
-            moon_is_malefic = True
-        else:
-            moon_is_malefic = False
-
-    for pl in house_11_planets:
-        if pl in standard_malefics:
-            malefics_in_11.append(pl)
-        elif pl in standard_benefics:
-            benefics_in_11.append(pl)
-        elif pl == 'Moon':
-            if moon_is_malefic:
-                malefics_in_11.append(pl)
-            else:
-                benefics_in_11.append(pl)
-
-    # Phase 3 Consumption Cycle
-    p3_cycle_limit = 200
+    # 4. Phase 3 Cycle
+    p3_loop = True
     p3_cycles = 0
-    p3_loop_active = True
-
-    while p3_loop_active and p3_cycles < p3_cycle_limit:
+    
+    while p3_loop and p3_cycles < 200 and pot_p3 > 0.001:
         p3_cycles += 1
-        p3_something_happened = False
-
-        # Phase A: Malefic Priority
-        if malefics_in_11:
-            # Build malefic processing order
-            malefic_order = []
-            for m in debtor_rank:
-                if m in malefics_in_11:
-                    malefic_order.append(m)
-            # Insert Moon if malefic
-            if moon_is_malefic and 'Moon' in malefics_in_11:
-                moon_bad_pct = (moon_bad_amount / phase3_data['Moon']['volume']) * 100 if phase3_data['Moon']['volume'] > 0 else 0
-                if moon_bad_pct > 25:
-                    # Insert before Mars
-                    insert_idx = malefic_order.index('Mars') if 'Mars' in malefic_order else len(malefic_order)
-                    malefic_order.insert(insert_idx, 'Moon')
-                else:
-                    # Insert after Mars
-                    insert_idx = malefic_order.index('Mars') if 'Mars' in malefic_order else 0
-                    malefic_order.insert(insert_idx + 1, 'Moon')
-
-            all_malefics_cleared = True
-            for debtor in malefic_order:
-                if phase3_data[debtor]['p3_current_debt'] >= -0.001:
-                    continue
-                all_malefics_cleared = False
-
-                if pot_amount <= 0:
-                    break
-
-                needed = abs(phase3_data[debtor]['p3_current_debt'])
-                take = min(pot_amount, needed)
-
-                if take > 0:
-                    phase3_data[debtor]['p3_inventory'][pot_currency] += take
-                    phase3_data[debtor]['p3_current_debt'] += take  # Reduce debt
-                    pot_amount -= take
-                    p3_something_happened = True
-
-            if all_malefics_cleared or pot_amount <= 0:
-                pass  # Proceed to Phase B if applicable
-            else:
-                # If not all cleared and pot >0, but since sequential, continue loop
-                pass
+        something_happened = False
+        
+        # Phase A: Malefics Priority
+        malefics_have_debt = any(phase3_data[m]['p3_current_debt'] < -0.001 for m in malefics_11)
+        
+        if malefics_have_debt:
+             for m in malefics_11:
+                 d = phase3_data[m]['p3_current_debt']
+                 if d < -0.001:
+                     take = min(pot_p3, abs(d))
+                     if take > 0:
+                         pot_p3 -= take
+                         phase3_data[m]['p3_inventory']['Good Moon'] = phase3_data[m]['p3_inventory'].get('Good Moon', 0.0) + take
+                         phase3_data[m]['p3_current_debt'] += take
+                         something_happened = True
+                         break # Strict priority: First available malefic eats, then loop restarts or continues next cycle
         else:
-            all_malefics_cleared = True
-
-        # Phase B: Benefic Secondary (only if malefics cleared or no malefics)
-        if all_malefics_cleared and benefics_in_11 and pot_amount > 0:
-            # Sort benefics by debt percentage (highest first)
-            sorted_benefics_11 = sorted(benefics_in_11, key=lambda x: -((abs(phase3_data[x]['p3_current_debt']) / phase3_data[x]['volume']) * 100 if phase3_data[x]['volume'] > 0 else 0))
-
-            for debtor in sorted_benefics_11:
-                if phase3_data[debtor]['p3_current_debt'] >= -0.001:
-                    continue
-
-                needed = abs(phase3_data[debtor]['p3_current_debt'])
-                take = min(pot_amount, needed)
-
-                if take > 0:
-                    phase3_data[debtor]['p3_inventory'][pot_currency] += take
-                    phase3_data[debtor]['p3_current_debt'] += take  # Reduce debt
-                    pot_amount -= take
-                    p3_something_happened = True
-
-                    if pot_amount <= 0:
-                        break
-
-        if not p3_something_happened:
-            p3_loop_active = False
+             # Phase B: Benefics Secondary (Only if Malefics are satisfied or absent)
+             # Sort Benefics by Debt Percentage dynamically
+             ben_list_w_debt = []
+             for b in benefics_11:
+                 d = phase3_data[b]['p3_current_debt']
+                 v = phase3_data[b]['volume']
+                 if d < -0.001:
+                     pct = (abs(d)/v)*100 if v > 0 else 0
+                     ben_list_w_debt.append((b, pct))
+             
+             ben_list_w_debt.sort(key=lambda x: -x[1]) # Highest % first
+             
+             if ben_list_w_debt:
+                 target_b = ben_list_w_debt[0][0]
+                 d = phase3_data[target_b]['p3_current_debt']
+                 take = min(pot_p3, abs(d))
+                 if take > 0:
+                     pot_p3 -= take
+                     phase3_data[target_b]['p3_inventory']['Good Moon'] = phase3_data[target_b]['p3_inventory'].get('Good Moon', 0.0) + take
+                     phase3_data[target_b]['p3_current_debt'] += take
+                     something_happened = True
+        
+        if not something_happened: p3_loop = False
 
     # --- FORMAT PHASE 3 OUTPUT ---
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
@@ -1555,12 +1562,12 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         d_val = phase3_data[p]['p3_current_debt']
         if abs(d_val) < 0.01: phase3_data[p]['debt_p3'] = "0.00"
         else: phase3_data[p]['debt_p3'] = f"{d_val:.2f}"
-
+    
     phase3_rows = []
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
         d_p3 = phase3_data[p]
         phase3_rows.append([p, d_p3['currency_p3'], d_p3['debt_p3']])
-
+    
     df_phase3 = pd.DataFrame(phase3_rows, columns=['Planet', 'Currency [Phase 3]', 'Debt [Phase 3]'])
 
     # ============================================================
@@ -1571,10 +1578,12 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                                              'Parivardhana',
                                              'Dig Bala (%)','Sthana Bala (%)','Status','Updated Status',
                                              'Volume', 'Default Currencies', 'Debt'])
+
     # df_rasi
     df_rasi = pd.DataFrame([[f"House {h}", get_sign((lagna_sid+(h-1)*30)%360), 
                              ', '.join(sorted(house_planets_rasi[h])) if house_planets_rasi[h] else 'Empty'] 
                             for h in range(1,13)], columns=['House','Sign','Planets'])
+
     # navamsa
     house_planets_nav = defaultdict(list)
     for p,L in lon_sid.items():
@@ -1585,6 +1594,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     df_nav = pd.DataFrame([[f"House {h}", get_sign((nav_lagna+(h-1)*30)%360), 
                             ', '.join(sorted(house_planets_nav[h])) if house_planets_nav[h] else 'Empty'] 
                            for h in range(1,13)], columns=['House','Sign','Planets'])
+
     # aspects table
     lagna_sign = get_sign(lagna_sid)
     aspects_dict = {'Sun':[7],'Moon':[7],'Mars':[4,7,8],'Mercury':[7],'Jupiter':[5,7,9],'Venus':[7],'Saturn':[3,7,10]}
@@ -1603,6 +1613,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
                              ', '.join(sorted(house_planets_rasi[h])) if house_planets_rasi[h] else 'Empty',
                              ', '.join(asp) if asp else 'None', lord, f"House {lord_house}"])
     df_house_status = pd.DataFrame(house_status, columns=['House','Planets','Aspects from','Lord','Lord in'])
+
     # dasa tree
     moon_lon = lon_sid['moon']
     idx, bal = generate_vimshottari_dasa(moon_lon)
@@ -1610,13 +1621,16 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     dasa_start = utc_dt - timedelta(days=passed*365.25)
     dasa = generate_periods(dasa_start, idx, 120, 'dasa', max_depth)
     dasa_filtered = filter_from_birth(dasa, utc_dt)
+
     depth_map = {1:'Dasa only',2:'Dasa + Bhukti',3:'Dasa + Bhukti + Anthara',
                  4:'Dasa + Bhukti + Anthara + Sukshma',5:'Dasa + Bhukti + Anthara + Sukshma + Prana',
                  6:'Dasa + Bhukti + Anthara + Sukshma + Prana + Sub-Prana'}
+
     return {
         'name': name, 'df_planets': df_planets, 'df_navamsa_exchange': df_navamsa_exchange,
         'df_navamsa_phase2': df_navamsa_phase2,
-        'df_phase1': df_phase1, 'df_phase2': df_phase2, 'df_phase3': df_phase3, 'df_rasi': df_rasi, 'df_nav': df_nav,
+        'df_phase1': df_phase1, 'df_phase2': df_phase2, 'df_phase3': df_phase3, 
+        'df_rasi': df_rasi, 'df_nav': df_nav,
         'df_house_status': df_house_status, 'dasa_periods_filtered': dasa_filtered,
         'lagna_sid': lagna_sid, 'nav_lagna': nav_lagna, 'lagna_sign': lagna_sign,
         'nav_lagna_sign': get_sign(nav_lagna), 'moon_rasi': get_sign(moon_lon),
@@ -1624,6 +1638,7 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
         'selected_depth': depth_map[max_depth], 'utc_dt': utc_dt, 'max_depth': max_depth,
         'house_to_planets_rasi': house_planets_rasi, 'house_to_planets_nav': house_planets_nav
     }
+
 # ---- South Indian plotter ----
 def plot_south_indian_style(ax, house_to_planets, lagna_sign, title):
     sign_positions = {'Pisces':(0,3),'Aries':(1,3),'Taurus':(2,3),'Gemini':(3,3),
@@ -1656,6 +1671,7 @@ def plot_south_indian_style(ax, house_to_planets, lagna_sign, title):
     ax.set_xlim(0,3); ax.set_ylim(0,3); ax.set_aspect('equal'); ax.invert_yaxis()
     ax.set_title(title, fontsize=3.6, fontweight='normal')
     ax.axis('off')
+
 # ---- Streamlit UI ----
 st.set_page_config(page_title="Buvi Horoscope", layout="wide")
 st.markdown("""
@@ -1673,20 +1689,27 @@ st.markdown("""
     .summary-item { font-size: 1.05rem; margin: 0.35rem 0; color: #125336; }
 </style>
 """, unsafe_allow_html=True)
+
 st.title("Buvi Astrology Data Generator")
+
 if 'chart_data' not in st.session_state: st.session_state.chart_data = None
 if 'search_results' not in st.session_state: st.session_state.search_results = []
+
 @st.cache_resource
 def get_geolocator():
     geolocator = Nominatim(user_agent="vedic_astro_app")
     return RateLimiter(geolocator.geocode, min_delay_seconds=1)
+
 geocode = get_geolocator()
 _tf = TimezoneFinder()
+
 def tz_for_latlon(lat: float, lon: float):
     tzname = _tf.timezone_at(lng=lon, lat=lat)
     if not tzname: return pytz.UTC
     return pytz.timezone(tzname)
+
 _DEPTH_NAME_TO_INT = {'Dasa':1, 'Bhukti':2, 'Anthara':3, 'Sukshma':4, 'Prana':5, 'Sub-Prana':6}
+
 def find_active_path_to_depth(periods, when_utc, target_depth, cur_depth=1):
     for lord, start, end, subs in periods:
         if start <= when_utc < end:
@@ -1695,6 +1718,7 @@ def find_active_path_to_depth(periods, when_utc, target_depth, cur_depth=1):
             sub_path = find_active_path_to_depth(subs, when_utc, target_depth, cur_depth+1)
             return [(lord, start, end)] + (sub_path or [])
     return None
+
 def collect_periods_at_depth(periods, target_depth, cur_depth=1, acc=None):
     if acc is None: acc = []
     for lord, start, end, subs in periods:
@@ -1703,6 +1727,7 @@ def collect_periods_at_depth(periods, target_depth, cur_depth=1, acc=None):
         else:
             collect_periods_at_depth(subs, target_depth, cur_depth+1, acc)
     return acc
+
 # =========================
 # Birth Details
 # =========================
@@ -1716,6 +1741,7 @@ with c2:
     birth_time = st.text_input("Birth Time (HH:MM in 24-hour format)", placeholder="14:30")
 with c3:
     tz_offset = st.number_input("Timezone offset at birth (hrs)", value=5.5, step=0.5)
+
 use_custom_coords = st.checkbox("Custom birth latitude and longitude?")
 if use_custom_coords:
     clat, clon = st.columns(2)
@@ -1729,6 +1755,7 @@ else:
             st.session_state.search_results = [{'display': loc.address, 'lat': loc.latitude, 'lon': loc.longitude, 'address': loc.address} for loc in (locations or [])]
         except: st.session_state.search_results = []
     else: st.session_state.search_results = []
+
     if st.session_state.search_results:
         opts = [r['display'] for r in st.session_state.search_results]
         sel = st.selectbox("Select birth location", options=opts)
@@ -1739,9 +1766,11 @@ else:
         if city_key in cities_fallback:
             lat = cities_fallback[city_key]['lat']; lon = cities_fallback[city_key]['lon']
         else: lat, lon = 13.08, 80.27
+
 max_depth_options = {1:'Dasa only',2:'Dasa + Bhukti',3:'Dasa + Bhukti + Anthara',4:'Dasa + Bhukti + Anthara + Sukshma',5:'Dasa + Bhukti + Anthara + Sukshma + Prana',6:'Dasa + Bhukti + Anthara + Sukshma + Prana + Sub-Prana'}
 selected_depth_str = st.selectbox("Generate up to (depth)", list(max_depth_options.values()), index=2)
 max_depth = [k for k,v in max_depth_options.items() if v == selected_depth_str][0]
+
 if st.button("Generate Chart", use_container_width=True):
     if not name or not birth_time: st.error("Please enter Name and Birth Time.")
     else:
@@ -1750,9 +1779,11 @@ if st.button("Generate Chart", use_container_width=True):
                 st.session_state.chart_data = compute_chart(name, birth_date, birth_time, lat, lon, tz_offset, max_depth)
             st.rerun()
         except Exception as e: st.error(f"Error: {e}")
+
 def show_png(fig):
     fig.tight_layout(pad=0.10)
     st.pyplot(fig, use_container_width=False, dpi=300)
+
 # =========================
 # Outputs
 # =========================
@@ -1768,18 +1799,25 @@ if st.session_state.chart_data:
         <div class="summary-item"><strong>Nakshatra:</strong> {cd['moon_nakshatra']} (Pada {cd['moon_pada']})</div>
     </div>
     """, unsafe_allow_html=True)
+
     st.subheader("Planetary Positions")
     st.dataframe(cd['df_planets'], hide_index=True, use_container_width=True)
+
     st.subheader("Navamsa Exchange (Phase 1)")
     st.dataframe(cd['df_navamsa_exchange'], hide_index=True, use_container_width=True)
+
     st.subheader("Navamsa Phase 2 Exchange")
     st.dataframe(cd['df_navamsa_phase2'], hide_index=True, use_container_width=True)
+
     st.subheader("Currency Exchange Phase 1")
     st.dataframe(cd['df_phase1'], hide_index=True, use_container_width=True)
+
     st.subheader("Currency Exchange Phase 2")
     st.dataframe(cd['df_phase2'], hide_index=True, use_container_width=True)
-    st.subheader("Currency Exchange Phase 3")
+
+    st.subheader("Phase 3 Currency Exchange (11th House)")
     st.dataframe(cd['df_phase3'], hide_index=True, use_container_width=True)
+
     st.subheader("Rasi (D1) & Navamsa (D9) — South Indian")
     col1, col2 = st.columns(2, gap="small")
     size = (1.8, 1.8)
@@ -1789,11 +1827,14 @@ if st.session_state.chart_data:
     fig2, ax2 = plt.subplots(figsize=size)
     plot_south_indian_style(ax2, cd['house_to_planets_nav'], cd['nav_lagna_sign'], 'Navamsa Chart (South Indian)')
     show_png(fig2)
+
     st.subheader("House Analysis")
     st.dataframe(cd['df_house_status'], hide_index=True, use_container_width=True)
+
     st.subheader(f"Vimshottari Dasa ({cd['selected_depth']})")
     dasa_rows = [{'Planet': lord, 'Start': s.strftime('%Y-%m-%d'), 'End': e.strftime('%Y-%m-%d'), 'Duration': duration_str(e-s,'dasa')} for lord, s, e, _ in cd['dasa_periods_filtered']]
     st.dataframe(pd.DataFrame(dasa_rows), hide_index=True, use_container_width=True)
+
     # Dasa Drill-down
     dp = cd['dasa_periods_filtered']
     if cd['max_depth'] >= 2:
@@ -1802,6 +1843,37 @@ if st.session_state.chart_data:
             sel = st.selectbox("Select Dasa:", d_opt)
             bhuktis = dp[d_opt.index(sel)][3]
             st.dataframe(pd.DataFrame([{'Planet': l, 'Start': s.strftime('%Y-%m-%d'), 'End': e.strftime('%Y-%m-%d'), 'Duration': duration_str(e-s,'bhukti')} for l,s,e,_ in bhuktis]), hide_index=True, use_container_width=True)
+
     # Current Micro-Periods
     st.subheader("Current City → Live Micro-Periods")
-    current_city
+    current_city_query = st.text_input("Enter your CURRENT city", placeholder="e.g., Chennai", key="current_city_input")
+    depth_choice = st.selectbox("Depth to inspect", ["Sukshma", "Prana", "Sub-Prana"])
+    
+    if st.button("Show current micro-periods", use_container_width=True):
+        if current_city_query:
+            try:
+                cur_locs = geocode(current_city_query, exactly_one=False, limit=1)
+                if cur_locs:
+                    cur = cur_locs[0]; tz = tz_for_latlon(cur.latitude, cur.longitude)
+                    now_local = datetime.now(tz); now_utc_naive = now_local.astimezone(pytz.UTC).replace(tzinfo=None)
+                    active_path = find_active_path_to_depth(dp, now_utc_naive, _DEPTH_NAME_TO_INT[depth_choice])
+                    flat_at_depth = collect_periods_at_depth(dp, _DEPTH_NAME_TO_INT[depth_choice])
+                    
+                    st.success(f"Time zone: {tz.zone} • Local now: {now_local.strftime('%Y-%m-%d %H:%M')}")
+                    if active_path:
+                        tbl = []
+                        idx_found = -1
+                        for i, (lord, s, e) in enumerate(flat_at_depth):
+                            if s <= now_utc_naive < e:
+                                idx_found = i
+                                break
+                        if idx_found != -1:
+                            for l,st_t,en_t in flat_at_depth[idx_found : idx_found+6]:
+                                tbl.append({"Lord": l, "Start (local)": st_t.replace(tzinfo=pytz.UTC).astimezone(tz).strftime('%Y-%m-%d %H:%M'), "End (local)": en_t.replace(tzinfo=pytz.UTC).astimezone(tz).strftime('%Y-%m-%d %H:%M'), "Duration": duration_str(en_t-st_t, depth_choice.lower())})
+                        st.dataframe(pd.DataFrame(tbl), hide_index=True, use_container_width=True)
+            except Exception as e: st.error(f"Error: {e}")
+
+else: st.info("Enter birth details above and click 'Generate Chart' to begin")
+
+st.markdown("---")
+st.caption("Buvi Astrology Data Generator")
