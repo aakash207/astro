@@ -1435,75 +1435,74 @@ def compute_chart(name, date_obj, time_str, lat, lon, tz_offset, max_depth):
     # ============================================================
     # END OF PHASE 2 LOGIC
     # ============================================================
-
+    
     # ============================================================
-    # PHASE 3 LOGIC (Navamsa Injection)
+    # PHASE 3 CURRENCY EXCHANGE LOGIC
+    # (Rasi Phase 2 + 10% Navamsa Injection)
     # ============================================================
-
-    phase3_data = {}
+    
+    # Note: Phase 3 = Phase 2 Rasi + (10% of Navamsa Phase 2 Gained Currencies) + (10% of Navamsa Phase 2 Corrected Debt)
+    
+    phase3_rows = []
     
     for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        # 1. Initialize with Phase 2 End State
-        p2_inv = phase2_data[p]['p2_inventory']
-        p2_debt = phase2_data[p]['p2_current_debt']
+        # 1. Start with Rasi Phase 2 Baseline
+        p3_inventory = phase2_data[p]['p2_inventory'].copy()
+        p3_debt = phase2_data[p]['p2_current_debt']
         
-        # Deep copy to avoid reference issues
-        phase3_data[p] = {
-            'p3_inventory': defaultdict(float),
-            'p3_current_debt': p2_debt
-        }
-        for k, v in p2_inv.items():
-            phase3_data[p]['p3_inventory'][k] = v
-
-        # 2. Calculate Navamsa 10% Injection
+        # 2. Get Navamsa Phase 2 Corrected Debt
+        # (This replicates the logic used in df_navamsa_phase2 display)
+        nav_initial = nav_initial_default_debts.get(p, 0.0)
+        nav_final_running = navamsa_phase2_data[p]['navp2_current_debt']
+        nav_corrected_debt = nav_final_running - nav_initial
         
-        # A. Currency Injection
-        # We need total gained currencies in Navamsa (P1 + P2)
+        # 3. Calculate 10% Debt Injection
+        debt_injection = nav_corrected_debt * 0.10
+        
+        # 4. Inject Debt
+        # Add blindly regardless of sign
+        p3_debt += debt_injection
+        
+        # 5. Inject Currency (10% of Gained)
+        # Combine P1 and P2 gained from Navamsa for the planet
         nav_gained_p1 = navamsa_phase2_data[p]['navp1_gained_currencies']
         nav_gained_p2 = navamsa_phase2_data[p]['navp2_gained_currencies']
         
-        # Combine and take 10%
-        # Combine into a single dictionary for easier processing
-        combined_gained = defaultdict(float)
-        for k, v in nav_gained_p1.items(): combined_gained[k] += v
-        for k, v in nav_gained_p2.items(): combined_gained[k] += v
-        
-        for curr_key, val in combined_gained.items():
-            injection = val * 0.10
-            # Add blindly irrespective of sign or type
-            phase3_data[p]['p3_inventory'][curr_key] += injection
-
-        # B. Debt Injection
-        # Use the actual running debt from Nav Phase 2 (navp2_current_debt)
-        # Note: We use the cumulative debt, not the 'corrected' difference used for display
-        nav_final_debt = navamsa_phase2_data[p]['navp2_current_debt']
-        debt_injection = nav_final_debt * 0.10
-        
-        # Add blindly
-        phase3_data[p]['p3_current_debt'] += debt_injection
-
-    # 3. Format Output
-    phase3_rows = []
-    for p in ['Sun','Moon','Mars','Mercury','Jupiter','Venus','Saturn','Rahu','Ketu']:
-        inv = phase3_data[p]['p3_inventory']
+        # Inject 10% of Phase 1 Gained
+        for cur_key, val in nav_gained_p1.items():
+            if val > 0: p3_inventory[cur_key] += (val * 0.10)
+            
+        # Inject 10% of Phase 2 Gained
+        for cur_key, val in nav_gained_p2.items():
+            if val > 0: p3_inventory[cur_key] += (val * 0.10)
+            
+        # 6. Formatting for DataFrame
+        # Generate Currency String
         parts = []
         own_keys = [p, f"Good {p}", f"Bad {p}"]
         if p == 'Moon': own_keys = ["Good Moon", "Bad Moon"]
+        
+        # Prioritize own keys
         for k in own_keys:
-            if k in inv and inv[k] > 0.001: parts.append(f"{k}[{inv[k]:.2f}]")
-        for k, v in inv.items():
-            if k not in own_keys and v > 0.001: parts.append(f"{k}[{v:.2f}]")
+            if k in p3_inventory and p3_inventory[k] > 0.001:
+                parts.append(f"{k}[{p3_inventory[k]:.2f}]")
+        # Add others
+        for k, v in p3_inventory.items():
+            if k not in own_keys and v > 0.001:
+                parts.append(f"{k}[{v:.2f}]")
         
         currency_str = ", ".join(parts) if parts else "-"
         
-        d_val = phase3_data[p]['p3_current_debt']
-        if abs(d_val) < 0.01: debt_str = "0.00"
-        else: debt_str = f"{d_val:.2f}"
-        
+        # Format Debt String
+        if abs(p3_debt) < 0.01:
+            debt_str = "0.00"
+        else:
+            debt_str = f"{p3_debt:.2f}"
+            
         phase3_rows.append([p, currency_str, debt_str])
         
     df_phase3 = pd.DataFrame(phase3_rows, columns=['Planet', 'Currency [Phase 3]', 'Debt [Phase 3]'])
-
+    
     # ============================================================
     # END OF PHASE 3 LOGIC
     # ============================================================
@@ -1747,8 +1746,8 @@ if st.session_state.chart_data:
 
     st.subheader("Currency Exchange Phase 2")
     st.dataframe(cd['df_phase2'], hide_index=True, use_container_width=True)
-    
-    st.subheader("Currency Exchange Phase 3 (Navamsa Injection)")
+
+    st.subheader("Currency Exchange Phase 3")
     st.dataframe(cd['df_phase3'], hide_index=True, use_container_width=True)
 
     st.subheader("Rasi (D1) & Navamsa (D9) — South Indian")
